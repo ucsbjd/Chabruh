@@ -83,15 +83,17 @@
   #cue.on { animation: cue 1.8s ease-out forwards; }
   @keyframes cue { 0% { opacity: 0; transform: translate(-50%, 8px); } 15% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
 
-  .pad {
-    position: absolute; width: 92px; height: 92px; margin: -46px 0 0 -46px; border-radius: 50%;
-    border: 1.5px solid var(--line); display: grid; place-items: center; opacity: 0.55; transition: opacity 0.2s;
-    background: radial-gradient(circle, rgba(232, 176, 74, calc(var(--p, 0) * 0.75)) 0 calc(var(--p, 0) * 70%), transparent calc(var(--p, 0) * 70% + 1%));
+  /* mini fingerboard: shows what your two fingers are doing */
+  #pad {
+    position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); width: 150px; height: 96px; margin-left: -75px;
+    display: grid; place-items: center; opacity: 0.45; transition: opacity 0.25s;
   }
-  .pad.down { opacity: 1; border-color: var(--ink); }
-  .pad span { font: 500 11px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); transform: translateY(62px); white-space: nowrap; }
-  #padL { left: 16%; top: 72%; }
-  #padR { left: 84%; top: 72%; }
+  #pad.down { opacity: 0.95; }
+  #padRing { position: absolute; width: 92px; height: 92px; border-radius: 50%; border: 1px dashed var(--line); }
+  #padBoard { width: 104px; height: 30px; transition: transform 0.04s linear; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
+  #pad.flip svg { transform: scaleX(-1); }
+  #padBoard .front { fill: rgba(232, 176, 74, calc(var(--front, 0) * 0.95)); }
+  #padBoard .back { fill: rgba(232, 176, 74, calc(var(--back, 0) * 0.95)); }
 
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; transition: opacity 1s; pointer-events: none; }
   #fade.on { opacity: 1; }
@@ -134,7 +136,7 @@
       <div class="seg"><button data-opt="time" data-val="golden">Golden hour</button><button data-opt="time" data-val="morning">Morning</button><button data-opt="time" data-val="dusk">Dusk</button></div>
       <span></span><span id="approach">Backside left</span>
     </div>
-    <p class="how">Your thumbs are your feet. Put one on each side of the screen and <b>slide a thumb down to press that foot</b>. Front foot drops the nose and drives speed. Back foot lifts the nose and stalls. Stomp the back foot to snap. Rock between them to pump. On a keyboard use <b>&larr;</b> and <b>&rarr;</b>, hold Shift to stomp.</p>
+    <p class="how">Ride it like a fingerboard. Rest two fingers together anywhere on the screen and slide them. <b>Up and down</b> carves up and down the face. <b>Toward where you are riding</b> puts weight on your front foot for speed. <b>Back</b> stalls. Slide back and up hard to snap. Rock up and down to pump. Keyboard: arrow keys, Shift to push harder.</p>
     <button id="go">Paddle out</button>
   </div>
 </div>
@@ -144,8 +146,17 @@
   <button id="menuBtn">Menu</button>
   <div id="msg"></div>
   <div id="cue"></div>
-  <div class="pad" id="padL"><span>back foot</span></div>
-  <div class="pad" id="padR"><span>front foot</span></div>
+  <div id="pad" aria-hidden="true">
+    <div id="padRing"></div>
+    <div id="padBoard">
+      <svg viewBox="0 0 104 30" width="104" height="30">
+        <path d="M3 15 C3 7 14 4 40 4 C70 4 92 7 101 15 C92 23 70 26 40 26 C14 26 3 23 3 15 Z" fill="#f3ece0" stroke="rgba(0,0,0,.35)" stroke-width="1"/>
+        <line x1="6" y1="15" x2="99" y2="15" stroke="#8a6a45" stroke-width="0.8"/>
+        <circle class="back" cx="26" cy="15" r="7" stroke="#1a1205" stroke-width="1"/>
+        <circle class="front" cx="64" cy="15" r="7" stroke="#1a1205" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
 </div>
 <div id="fade"></div>
 <div id="debug" hidden></div>

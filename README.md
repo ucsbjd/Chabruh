@@ -22,14 +22,14 @@ Handy URL flags (put them after `#` or `?`):
 
 ## Controls
 
-Your thumbs are your feet. Put one on each side of the screen; the foot toward the direction you are riding is your front foot. Slide a thumb down to press that foot.
+Ride it like a fingerboard. Rest two fingers (index and middle) close together anywhere on the screen and slide them; only the movement counts, so keep them low and out of the way of the surfer. The little board at the bottom shows what your fingers are doing.
 
-- Front foot: drops the nose toward the bottom of the wave and drives speed.
-- Back foot: lifts the nose up the face and stalls (slow down to get deeper in the barrel).
-- Stomp the back foot (slide it all the way down) at speed to pivot: snaps off the top, cutbacks.
-- Rock between front and back to pump down the line.
+- Up and down: carve up and down the face. Rock up and down to pump.
+- Toward the direction you are riding: weight on the front foot, nose down, more speed.
+- Away from it: weight on the back foot, stall (get deeper in the barrel).
+- Back and up hard at speed: stomp the tail and snap, or swing into a cutback.
 
-Keyboard: left and right arrow keys are the left and right foot. Hold Shift to stomp.
+Keyboard: arrow keys (or WASD), hold Shift to push harder.
 
 Too far out on the shoulder and the wave loses its push and rolls through. Too deep behind the curl and the lip lands on you.
 
@@ -39,6 +39,6 @@ Too far out on the shoulder and the wave loses its push and rolls through. Too d
 - `src/waveMesh.js` builds that mesh; `src/water.js` shades it (sky reflections, light through the thin lip, detail normals that flow up the face, foam) and draws the open ocean with Gerstner swell.
 - `src/physics.js` rides the surfer on the face in the peel's frame: gravity along the slope, board grip, drag, pumping, tail stalls, pivots, airs and floaters.
 - `src/sky.js` is the Preetham sky, also baked to a cube map for reflections.
-- `src/surfer.js`, `src/particles.js`, `src/audio.js`: the posed figure, spray and mist, and procedural ocean sound.
+- `src/surfer.js` poses a rigged human (`assets/surfer.glb`, the Mixamo X Bot from the three.js examples, recoloured as a wetsuit) with procedural IK; `src/particles.js` and `src/audio.js` are spray and mist, and procedural ocean sound.
 
 `node tools/build-artifact.mjs` writes `dist/artifact.html`, a copy of the page without the document wrapper for hosting as a claude.ai Artifact.

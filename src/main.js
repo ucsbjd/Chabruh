@@ -6,7 +6,7 @@ import { makeWaterNormalMap, makeFoamMap, makeSprayTexture } from './textures.js
 import { makeWaterUniforms, makeWaveMaterial, makeOceanMaterial, makeOceanGeometry, gerstnerHeight } from './water.js';
 import { Surfer } from './surfer.js';
 import { Rider } from './physics.js';
-import { FootInput } from './input.js';
+import { FingerboardInput } from './input.js';
 import { OceanAudio } from './audio.js';
 import { Spray } from './particles.js';
 
@@ -16,6 +16,7 @@ const flag = (k) => hash.includes(k) || search.has(k);
 const QUICK = flag('quick');
 const BOT = flag('bot');
 const DEBUG = flag('debug');
+const CLOSEUP = flag('closeup');
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -57,6 +58,7 @@ waveMesh.mesh.visible = false;
 
 const surfer = new Surfer();
 root.add(surfer.root);
+surfer.load('assets/surfer.glb');
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
 scene.add(sunLight, sunLight.target);
@@ -69,7 +71,7 @@ const spray = new Spray(6000, makeSprayTexture(64), sky.sunColor);
 root.add(spray.points);
 
 const rider = new Rider(wave);
-const input = new FootInput(canvas);
+const input = new FingerboardInput(canvas);
 const audio = new OceanAudio();
 
 function applyTime(name) {
@@ -104,15 +106,14 @@ function applyCfg() {
 const $ = (id) => document.getElementById(id);
 const ui = {
   menu: $('menu'), hud: $('hud'), msg: $('msg'), cue: $('cue'), fade: $('fade'), status: $('status'), dbg: $('debug'),
-  padL: $('padL'), padR: $('padR'),
+  pad: $('pad'), padBoard: $('padBoard'), padRing: $('padRing'),
   update() {
     for (const el of document.querySelectorAll('[data-opt]')) {
       el.setAttribute('aria-pressed', String(cfg[el.dataset.opt] === el.dataset.val));
     }
     $('approach').textContent = `${frontside() ? 'Frontside' : 'Backside'} ${cfg.wave}`;
-    const fr = input.frontIsRight;
-    ui.padL.querySelector('span').textContent = fr ? 'back foot' : 'front foot';
-    ui.padR.querySelector('span').textContent = fr ? 'front foot' : 'back foot';
+    // mini board points the way you travel on screen
+    ui.pad.classList.toggle('flip', !input.frontIsRight);
   },
 };
 for (const el of document.querySelectorAll('[data-opt]')) {
@@ -247,15 +248,12 @@ function surfaceYAtZ(u, zr) {
 
 // ---------- bot (for testing the physics) ----------
 function botInput() {
-    if (game.state !== 'ride' || rider.state !== 'ride') return { left: 0, right: 0 };
-    const sT = rider.sTop * 0.55;
-    const thDes = clamp(0.25 * (sT - rider.s) - 0.05 * (rider.u - 4), -0.8, 0.8);
-    const err = Math.atan2(Math.sin(thDes - rider.th), Math.cos(thDes - rider.th));
-    const c = 0.9 * err - 0.18 * rider.om;
-    let front = 0, back = 0;
-    if (c > 0) back = clamp(c, 0, 0.7); else front = clamp(-c, 0, 1);
-    if (rider.u < 2) front = Math.min(1, front + 0.25);
-    return input.frontIsRight ? { left: back, right: front } : { left: front, right: back };
+  if (game.state !== 'ride' || rider.state !== 'ride') return { steer: 0, weight: 0 };
+  const sT = rider.sTop * 0.55;
+  const thDes = clamp(0.25 * (sT - rider.s) - 0.05 * (rider.u - 4), -0.8, 0.8);
+  const err = Math.atan2(Math.sin(thDes - rider.th), Math.cos(thDes - rider.th));
+  const c = 0.9 * err - 0.18 * rider.om;
+  return { steer: clamp(c, -1, 1), weight: rider.u < 2 ? 0.4 : 0 };
 }
 function syncBot() { input.bot = BOT || game.demo ? botInput : null; }
 
@@ -297,6 +295,10 @@ function updateCamera(dt) {
       desiredPos.y += e * 3; desiredPos.z += e * 6; desiredPos.x += e * 4;
     }
   }
+  if (CLOSEUP && (game.state === 'ride' || game.state === 'end')) {
+    rider.pose(sp, tmpFwd, tmpUp);
+    desiredPos.copy(sp).add(new THREE.Vector3(2.2, 0.9, 3.2)); desiredLook.copy(sp).add(new THREE.Vector3(0, 0.9, 0));
+  }
   // to world (mirror)
   desiredPos.x *= mir(); desiredLook.x *= mir();
   if (!camState.init) { camState.pos.copy(desiredPos); camState.look.copy(desiredLook); camState.init = true; }
@@ -310,10 +312,11 @@ function updateCamera(dt) {
 function rideCamPos(sp, out) {
   const H = wave.H0;
   const deep = rider.cover || 0;
-  return out.set(sp.x + 11 - deep * 3, H * 0.38 + 1.6 + sp.y * 0.3, wave.z + 13.5 - deep * 2);
+  return out.set(sp.x + 11 - deep * 3, H * 0.38 + 1.3 + sp.y * 0.3, wave.z + 14 - deep * 2);
 }
 function rideCamLook(sp, out) {
-  return out.set(sp.x - 3.0, sp.y * 0.5 + wave.H0 * 0.3, wave.z + 1.0);
+  // aim below the surfer so they sit in the upper half, clear of your fingers
+  return out.set(sp.x - 3.0, sp.y * 0.5 + wave.H0 * 0.3 - 1.3, wave.z + 1.0);
 }
 
 // ---------- FX ----------
@@ -438,7 +441,7 @@ function poseSurfer(dt) {
   rider.pose(tmpPos, tmpFwd, tmpUp);
   const pf = rider.pf, pb = rider.pb;
   const turn = Math.abs(rider.om);
-  const tgtCrouch = clamp(0.3 + Math.max(pf, pb) * 0.3 + turn * 0.12 + rider.cover * 0.35 + (rider.state === 'air' ? 0.3 : 0), 0, 1);
+  const tgtCrouch = clamp(0.3 + Math.max(pf, pb) * 0.3 + Math.abs(rider.st) * 0.15 + turn * 0.12 + rider.cover * 0.35 + (rider.state === 'air' ? 0.3 : 0), 0, 1);
   p.crouch += (tgtCrouch - p.crouch) * Math.min(1, dt * 8);
   p.leanX += ((pf - pb) - p.leanX) * Math.min(1, dt * 8);
   p.leanZ += (clamp(-rider.roll * 0.6, -0.6, 0.6) * surfer.facing - p.leanZ) * Math.min(1, dt * 6);
@@ -459,20 +462,17 @@ function poseSurfer(dt) {
 
 // ---------- HUD ----------
 function updateHud() {
-  const set = (pad, v, down) => {
-    pad.style.setProperty('--p', v.toFixed(3));
-    pad.classList.toggle('down', down);
-  };
-  set(ui.padL, input.left, input.leftDown);
-  set(ui.padR, input.right, input.rightDown);
-  // move pads under the thumbs
-  for (const [pad, side] of [[ui.padL, 'left'], [ui.padR, 'right']]) {
-    const p = input.pointerFor(side);
-    if (p) { pad.style.left = p.x0 + 'px'; pad.style.top = p.y0 + 'px'; pad.classList.add('placed'); }
-  }
+  // the mini board at the bottom mirrors what your fingers are doing
+  const R = 34;
+  const dir = input.frontIsRight ? 1 : -1;
+  const tilt = -input.dy * 28 * dir;
+  ui.padBoard.style.transform = `translate(${(input.dx * R).toFixed(1)}px, ${(-input.dy * R).toFixed(1)}px) rotate(${tilt.toFixed(1)}deg)`;
+  ui.pad.classList.toggle('down', input.touching || Math.abs(input.dx) + Math.abs(input.dy) > 0.02);
+  ui.pad.style.setProperty('--front', input.front.toFixed(2));
+  ui.pad.style.setProperty('--back', input.back.toFixed(2));
   if (DEBUG || game.debug) {
     ui.dbg.hidden = false;
-    ui.dbg.textContent = `${game.state}/${rider.state}  V ${rider.V.toFixed(1)}  u ${rider.u.toFixed(1)}  s ${rider.s.toFixed(1)}/${(rider.sTop || 0).toFixed(1)}  b ${(rider.b || 0).toFixed(2)}  th ${(rider.th * 57.3).toFixed(0)}  P ${wave.peelSpeed.toFixed(1)}  f ${rider.pf.toFixed(2)} b ${rider.pb.toFixed(2)}  ${(1 / Math.max(1e-3, fpsAvg)).toFixed(0)}fps`;
+    ui.dbg.textContent = `${game.state}/${rider.state}  V ${rider.V.toFixed(1)}  u ${rider.u.toFixed(1)}  s ${rider.s.toFixed(1)}/${(rider.sTop || 0).toFixed(1)}  b ${(rider.b || 0).toFixed(2)}  th ${(rider.th * 57.3).toFixed(0)}  P ${wave.peelSpeed.toFixed(1)}  st ${rider.st.toFixed(2)} f ${rider.pf.toFixed(2)} b ${rider.pb.toFixed(2)}  ${(1 / Math.max(1e-3, fpsAvg)).toFixed(0)}fps`;
   }
 }
 window.addEventListener('keydown', (e) => { if (e.code === 'Backquote') game.debug = !game.debug; });
@@ -523,8 +523,8 @@ function step(dt) {
     }
     if (wave.close) { wave.close.t += dt; wave.version++; }
 
-    const inp = { front: input.front, back: input.back };
-    if (game.catchT < 0.5) { inp.front = 0; inp.back = 0; }
+    const inp = { front: input.front, back: input.back, steer: input.steer };
+    if (game.catchT < 0.5) { inp.front = 0; inp.back = 0; inp.steer = 0; }
     rider.step(dt, inp);
     for (const ev of rider.events) handleEvent(ev);
     if (game.state === 'ride' && rider.result) endRide(rider.result);
@@ -606,7 +606,7 @@ startDemo();
 requestAnimationFrame(frame);
 
 // test hooks
-window.__game = { game, rider, wave, cfg, step, visual, beginWait, input, camera, renderer, scene, applyCfg, message };
+window.__game = { surfer, game, rider, wave, cfg, step, visual, beginWait, input, camera, renderer, scene, applyCfg, message };
 if (BOT && (search.has('autostart') || hash.includes('autostart'))) {
   ui.menu.hidden = true; ui.hud.hidden = false; beginWait(2);
 }

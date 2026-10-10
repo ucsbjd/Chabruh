@@ -42,7 +42,7 @@ export class Rider {
   reset() {
     this.state = 'idle';
     this.u = 5; this.s = 2; this.V = 9; this.th = -0.4; this.om = 0;
-    this.pf = 0; this.pb = 0;
+    this.pf = 0; this.pb = 0; this.st = 0;
     this.pivot = 0; this.pivotDir = 1; this.pivotTurned = 0;
     this.time = 0; this.slowTime = 0;
     this.barrel = 0; this.barrelTime = 0; this.inBarrel = false;
@@ -120,6 +120,7 @@ export class Rider {
     const k = Math.min(1, dt * 14);
     this.pf += (input.front - this.pf) * k;
     this.pb += (input.back - this.pb) * k;
+    this.st += ((input.steer || 0) - this.st) * k;
     if (this.state === 'air') return this.stepAir(dt);
     if (this.state === 'float') return this.stepFloat(dt);
     if (this.state === 'wipe' || this.state === 'over') {
@@ -144,10 +145,15 @@ export class Rider {
     const rate = (0.9 + 2.5 * clamp(V / 9, 0, 1.25)) * (this.frontside ? 1.06 : 0.96);
     const dDown = arcTo(this.th, -Math.PI / 2);
     const dUp = arcTo(this.th, Math.PI / 2);
-    let omT = rate * (pf * clamp(dDown / 0.5, -1, 1) + pb * 1.05 * clamp(dUp / 0.5, -1, 1));
+    // carve toward the top or the bottom of the face; a half turn always
+    // goes through "down the line" unless you are already heading back
+    const st = this.st;
+    let omT = st > 0 ? rate * st * clamp(dUp / 0.5, -1, 1) : rate * -st * clamp(dDown / 0.5, -1, 1);
+    // leaning on the front foot also pulls the nose down a little
+    omT += rate * 0.25 * pf * clamp(dDown / 0.5, -1, 1);
 
-    // stomping the tail pivots the board (snaps, cutbacks)
-    if (!this.pivot && pb > 0.8 && pb - pf > 0.45 && V > 4.2) {
+    // stomping the tail while carving up pivots the board (snaps, cutbacks)
+    if (!this.pivot && pb > 0.75 && st > 0.25 && V > 4.2) {
       this.pivot = 1;
       this.pivotDir = Math.abs(dUp) < 0.4 ? (Math.sign(this.om) || 1) : Math.sign(dUp);
       this.pivotTurned = 0;
@@ -155,7 +161,7 @@ export class Rider {
     }
     if (this.pivot) {
       omT = this.pivotDir * (4.6 + pb * 1.6) * (this.frontside ? 1 : 0.9);
-      if (pb < 0.55 || this.pivotTurned > 2.9) this.pivot = 0;
+      if (pb < 0.5 || this.pivotTurned > 2.9) this.pivot = 0;
     }
     this.om += (omT - this.om) * Math.min(1, dt * (this.pivot ? 16 : 7.5));
     const dth = this.om * dt;
@@ -280,7 +286,7 @@ export class Rider {
     a.vy -= G * dt;
     a.x += a.vx * dt; a.y += a.vy * dt; a.z += a.vz * dt;
     // spin with the feet
-    const sp = 5.2 * (this.pb - this.pf);
+    const sp = 5.2 * (this.pb - this.pf + this.st * 0.6);
     this.om += (sp - this.om) * Math.min(1, dt * 6);
     this.th = wrap(this.th + this.om * dt);
     a.spin += this.om * dt;

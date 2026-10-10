@@ -1,6 +1,7 @@
 // Surfer + board: a simple articulated figure posed procedurally from the
 // ride state (compression, lean, banking, arm positions).
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
@@ -238,6 +239,156 @@ export class Surfer {
     this.upperL.set(shFront, eF); this.foreL.set(eF, hF);
     this.upperR.set(shBack, eB); this.foreR.set(eB, hB);
     this.handL.position.copy(hF); this.handR.position.copy(hB);
+
+    if (this.model) {
+      const footF = p.mode === 'sit' || stand < 0.5 ? fFoot : frontFoot;
+      const footB = p.mode === 'sit' || stand < 0.5 ? bFoot : backFoot;
+      // model's left side: across the board when standing, across the body otherwise
+      const left = p.mode === 'stand' && stand >= 0.5 ? V(f > 0 ? 1 : -1, 0, 0) : V(0, 0, -1);
+      if (p.mode === 'stand' && stand >= 0.5) left.applyQuaternion(qLean);
+      this.driveModel({ pelvis, spine, neck, left, footF, footB, hF, hB, shAxis, mode: p.mode, stand, f });
+    }
+  }
+
+  // ---- skinned human model ----
+  load(url) {
+    new GLTFLoader().load(url, (gltf) => {
+      const model = gltf.scene;
+      const bones = {};
+      model.traverse((o) => {
+        if (o.isBone) bones[o.name.replace(/^mixamorig:?/, '')] = o;
+        if (o.isSkinnedMesh) o.frustumCulled = false;
+      });
+      if (!bones.Hips) return;
+      const suit = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.42, metalness: 0.0 });
+      const joints = new THREE.MeshStandardMaterial({ color: 0xbfc4c8, vertexColors: true, roughness: 0.5 });
+      model.traverse((o) => {
+        if (!o.isSkinnedMesh) return;
+        // colour by bone: head, hands and feet are skin, the rest is wetsuit
+        const g = o.geometry, idx = g.attributes.skinIndex, wt = g.attributes.skinWeight;
+        const names = o.skeleton.bones.map((b) => b.name);
+        const colors = new Float32Array(idx.count * 3);
+        const skinC = new THREE.Color(0xc99470), suitC = new THREE.Color(0x14181b), panel = new THREE.Color(0x1f4f5e);
+        for (let i = 0; i < idx.count; i++) {
+          let skinW = 0, panelW = 0;
+          for (let k = 0; k < 4; k++) {
+            const n = names[idx.getComponent(i, k)] || '', w = wt.getComponent(i, k);
+            if (/Head|Eye|Hand|Thumb|Index|Middle|Ring|Pinky|Foot|Toe/.test(n)) skinW += w;
+            else if (/Spine1|Spine2/.test(n)) panelW += w * 0.35;
+          }
+          const c = suitC.clone().lerp(panel, Math.min(1, panelW)).lerp(skinC, Math.min(1, skinW * 1.6));
+          colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        o.material = /Joints/i.test(o.name) ? joints : suit;
+      });
+      // hair
+      const hair = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.47), new THREE.MeshStandardMaterial({ color: 0x2a1c10, roughness: 0.85 }));
+      bones.Head.add(hair);
+      hair.scale.set(9.4, 9.0, 10.6); // bone space is in centimetres
+      hair.position.set(0, 10.2, 0.4);
+      hair.rotation.x = -0.35;
+
+      this.body.add(model);
+      model.updateMatrixWorld(true);
+      this.bones = bones;
+      this.rest = {};
+      for (const [n, b] of Object.entries(bones)) this.rest[n] = b.quaternion.clone();
+      const d = (a, b) => this.toBody(bones[a]).distanceTo(this.toBody(bones[b]));
+      this.dims = { thigh: d('LeftUpLeg', 'LeftLeg'), shin: d('LeftLeg', 'LeftFoot'), upper: d('LeftArm', 'LeftForeArm'), fore: d('LeftForeArm', 'LeftHand') };
+      this.model = model;
+      // the simple figure is only a stand-in until the model loads
+      for (const m of [this.thighL, this.thighR, this.shinL, this.shinR, this.torso, this.upperL, this.upperR, this.foreL, this.foreR]) m.mesh.visible = false;
+      for (const m of [this.head, this.hair, this.handL, this.handR, this.footL, this.footR]) m.visible = false;
+      this.apply();
+    }, undefined, (e) => console.warn('surfer model failed to load; using the simple figure', e));
+  }
+
+  toBody(obj, out = V()) {
+    obj.getWorldPosition(out);
+    return this.body.worldToLocal(out);
+  }
+
+  // rotation of obj relative to the body group (no mirroring involved)
+  bodyQuat(obj, out = new THREE.Quaternion()) {
+    out.identity();
+    for (let o = obj; o && o !== this.body; o = o.parent) out.premultiply(o.quaternion);
+    return out;
+  }
+
+  setBodyQuat(bone, q) {
+    const pq = this.bodyQuat(bone.parent).invert();
+    bone.quaternion.copy(pq.multiply(q));
+    bone.updateMatrixWorld(true);
+  }
+
+  // rotate bone so that its child points at target (body space)
+  aim(bone, child, target) {
+    const a = this.toBody(bone), b = this.toBody(child);
+    const cur = b.sub(a).normalize(), want = target.clone().sub(a).normalize();
+    if (cur.lengthSq() < 1e-8 || want.lengthSq() < 1e-8) return;
+    const q = new THREE.Quaternion().setFromUnitVectors(cur, want).multiply(this.bodyQuat(bone));
+    this.setBodyQuat(bone, q);
+  }
+
+  // rotate bone so that one of its local axes lines up with dir (body space)
+  alignAxis(bone, axis, dir) {
+    const bq = this.bodyQuat(bone);
+    const cur = axis.clone().applyQuaternion(bq).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(cur, dir.clone().normalize()).multiply(bq);
+    this.setBodyQuat(bone, q);
+  }
+
+  driveModel(j) {
+    const B = this.bones;
+    for (const [n, q] of Object.entries(this.rest)) B[n].quaternion.copy(q);
+    // hips: up along the spine, left across the body
+    const up = j.spine.clone().normalize();
+    const left = j.left.clone().sub(up.clone().multiplyScalar(j.left.dot(up))).normalize();
+    const fwd = V().crossVectors(left, up);
+    const m = new THREE.Matrix4().makeBasis(left, up, fwd);
+    this.setBodyQuat(B.Hips, new THREE.Quaternion().setFromRotationMatrix(m));
+    const hp = this.body.localToWorld(j.pelvis.clone());
+    B.Hips.position.copy(B.Hips.parent.worldToLocal(hp));
+    B.Hips.updateMatrixWorld(true);
+
+    // spine curls toward the neck target; shoulders open toward the nose
+    this.aim(B.Spine, B.Spine2, j.neck.clone().lerp(j.pelvis, 0.35));
+    this.aim(B.Spine2, B.Neck, j.neck);
+    const sh = j.shAxis.clone();
+    if (sh.dot(left) < 0) sh.negate();
+    sh.sub(up.clone().multiplyScalar(sh.dot(up)));
+    if (sh.lengthSq() > 1e-6) this.alignAxis(B.Spine2, V(1, 0, 0), sh);
+    // head looks down the line (toward the nose) when standing
+    if (j.mode === 'stand') this.alignAxis(B.Head, V(0, 0, 1), V(1, -0.25, 0).lerp(fwd, 0.3));
+
+    // legs: each model leg takes the foot on its own side
+    const pole = fwd.clone().add(V(0, j.mode === 'sit' ? 0.4 : 0, 0)).normalize();
+    const lf = j.footF.clone().sub(j.pelvis).dot(left) >= j.footB.clone().sub(j.pelvis).dot(left);
+    const feet = { Left: lf ? j.footF : j.footB, Right: lf ? j.footB : j.footF };
+    const { thigh, shin, upper, fore } = this.dims;
+    for (const side of ['Left', 'Right']) {
+      const hip = this.toBody(B[side + 'UpLeg']);
+      const foot = feet[side].clone().add(V(0, 0.07, 0));
+      const knee = ik(hip, foot, thigh, shin, pole);
+      this.aim(B[side + 'UpLeg'], B[side + 'Leg'], knee);
+      this.aim(B[side + 'Leg'], B[side + 'Foot'], foot);
+      if (j.mode === 'stand') {
+        // feet flat across the board, toes toward the facing side
+        const toe = foot.clone().add(V(0.05, -0.06, j.f * 0.16));
+        this.aim(B[side + 'Foot'], B[side + 'ToeBase'], toe);
+      }
+    }
+    // arms
+    const lh = j.hF.clone().sub(j.pelvis).dot(left) >= j.hB.clone().sub(j.pelvis).dot(left);
+    const hands = { Left: lh ? j.hF : j.hB, Right: lh ? j.hB : j.hF };
+    const elbowPole = j.mode === 'stand' ? V(0, -1, 0).addScaledVector(fwd, -0.3).normalize() : fwd.clone().negate();
+    for (const side of ['Left', 'Right']) {
+      const shp = this.toBody(B[side + 'Arm']);
+      const elbow = ik(shp, hands[side], upper, fore, elbowPole);
+      this.aim(B[side + 'Arm'], B[side + 'ForeArm'], elbow);
+      this.aim(B[side + 'ForeArm'], B[side + 'Hand'], hands[side]);
+    }
   }
 
   // Place the board in the world: position, forward (nose) and up vectors.

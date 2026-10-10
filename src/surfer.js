@@ -251,7 +251,7 @@ export class Surfer {
   }
 
   // ---- skinned human model ----
-  load(url) {
+  load(url, fallback) {
     new GLTFLoader().load(url, (gltf) => {
       const model = gltf.scene;
       const bones = {};
@@ -301,7 +301,10 @@ export class Surfer {
       for (const m of [this.thighL, this.thighR, this.shinL, this.shinR, this.torso, this.upperL, this.upperR, this.foreL, this.foreR]) m.mesh.visible = false;
       for (const m of [this.head, this.hair, this.handL, this.handR, this.footL, this.footR]) m.visible = false;
       this.apply();
-    }, undefined, (e) => console.warn('surfer model failed to load; using the simple figure', e));
+    }, undefined, (e) => {
+      if (fallback) this.load(fallback);
+      else console.warn('surfer model failed to load; using the simple figure', e);
+    });
   }
 
   toBody(obj, out = V()) {

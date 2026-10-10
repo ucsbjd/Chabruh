@@ -58,7 +58,8 @@ waveMesh.mesh.visible = false;
 
 const surfer = new Surfer();
 root.add(surfer.root);
-surfer.load('assets/surfer.glb');
+// (the Artifact host only serves a fixed set of file types, so it gets a renamed copy)
+surfer.load('assets/surfer.glb', 'assets/surfer-model.wasm');
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
 scene.add(sunLight, sunLight.target);

@@ -1,0 +1,61 @@
+# Builds the Godot web export and deploys it to Firebase Hosting (project chabruh-surf).
+#   push to main        -> deploys to the live site
+#   manual run elsewhere -> deploys to a throwaway channel named ci-test
+#                           (gh workflow run firebase-hosting.yml --ref <branch>)
+# Needs one repo secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a service account in that
+# project (Firebase console > Project settings > Service accounts).
+name: Deploy to Firebase Hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: barichello/godot-ci:4.7.2
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub points HOME somewhere else inside containers, so copy the templates to where
+      # Godot will look for them.
+      - name: Install export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          cp -r /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/
+      - name: Import project
+        run: godot --headless --path game --import
+      - name: Run tests
+        run: godot --headless --path game --script res://tests/run_tests.gd
+      - name: Export web build
+        run: |
+          mkdir -p build/web
+          godot --headless --path game --export-release "Web" ../build/web/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: build/web
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - name: Skip until the Firebase key is added
+        if: env.HAS_KEY != 'true'
+        run: echo "FIREBASE_SERVICE_ACCOUNT secret not set; skipping deploy."
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+      - uses: actions/download-artifact@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          name: web
+          path: build/web
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        if: env.HAS_KEY == 'true'
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: chabruh-surf
+          channelId: ${{ github.ref == 'refs/heads/main' && 'live' || 'ci-test' }}

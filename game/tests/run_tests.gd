@@ -18,6 +18,8 @@ func _initialize() -> void:
 	_test_shader_colours()
 	_test_ridge_layer()
 	_test_wave_model()
+	_test_wave_section()
+	_test_wave_mesh()
 	_test_noise_textures()
 	_test_scale_marker()
 	_test_tuning()
@@ -105,23 +107,29 @@ func _test_wave_model() -> void:
 	var surfers := wave.height() / WaveModel.SURFER_HEIGHT
 	_check(surfers > 1.4 and surfers < 2.0, "the default wave is about 1.7 surfers tall, like the key frames (%.2f)" % surfers)
 
-	_check(wave.crest_height_at(0.0) > wave.crest_height_at(1.0) and wave.crest_height_at(1.0) > wave.crest_height_at(3.0), "the wall tapers down the line")
-	_check(wave.crest_height_at(-1.0) < wave.crest_height_at(0.0), "the wall collapses behind the peel point")
-	_check(wave.base_y_at(3.0) < wave.base_y_at(0.0) and wave.base_y_at(3.0) > WaveModel.HORIZON, "the base line climbs toward the horizon down the line, but not past it")
+	_check(wave.taper_at(0.0) > wave.taper_at(20.0) and wave.taper_at(20.0) > wave.taper_at(45.0), "the wall tapers down the line")
+	_check(wave.crest_height_at(-8.0) < wave.crest_height_at(0.0) * 0.2, "the wall collapses behind the peel point")
+	_check(wave.crest_height_at(-WaveModel.PROFILE_BEHIND) < 0.01, "the wave has faded out at the far end behind")
 
-	_check(is_equal_approx(wave.surface_y(0.3, 0.0), wave.base_y_at(0.3)), "height 0 on the face is the base line")
-	_check(is_equal_approx(wave.surface_y(0.3, 1.0), wave.base_y_at(0.3) - wave.crest_height_at(0.3)), "height 1 on the face is the crest")
+	var feet := wave.surface_point(2.0, 0.5)
+	_check(is_equal_approx(feet.x, -2.0), "ahead of the peel point is toward negative x, along the crest")
+	_check(is_zero_approx(wave.surface_point(2.0, 0.0).y), "height 0 on the face is the trough")
+	_check(wave.surface_point(2.0, 1.0).y > feet.y and feet.y > 0.0, "the face climbs from the trough to its top")
+	_check(wave.surface_point(2.0, 1.0).y < wave.crest_point(2.0).y + 0.001, "the top of the face is at or under the crest")
+	_check(wave.surface_normal(2.0, 0.5).z > 0.0 and is_equal_approx(wave.surface_normal(2.0, 0.5).length(), 1.0), "the face looks out toward the beach")
 	_check(wave.face_angle(1.0) > wave.face_angle(0.0), "the face steepens toward the crest")
 
 	wave.size = 1.0
 	wave.hollowness = 1.0
 	_check(wave.barrel() > 0.9, "a big hollow wave is a full barrel")
-	_check(wave.zone_at(2.0) == WaveModel.Zone.SHOULDER, "far ahead of the break is the shoulder")
-	_check(wave.zone_at(0.2) == WaveModel.Zone.POCKET, "just ahead of the break is the pocket")
-	_check(wave.zone_at(-0.4) == WaveModel.Zone.BARREL, "just behind the break of a hollow wave is the barrel")
-	_check(wave.zone_at(-1.5) == WaveModel.Zone.WHITEWATER, "far behind the break is whitewater")
+	_check(wave.zone_at(8.0) == WaveModel.Zone.SHOULDER, "far ahead of the break is the shoulder")
+	_check(wave.zone_at(2.0) == WaveModel.Zone.POCKET, "just ahead of the break is the pocket")
+	_check(wave.zone_at(-1.0) == WaveModel.Zone.BARREL, "just behind the break of a hollow wave is the barrel")
+	_check(wave.zone_at(-9.0) == WaveModel.Zone.WHITEWATER, "far behind the break is whitewater")
+	var lip := wave.lip_tip_point(-1.0)
+	_check(lip.z > wave.crest_point(-1.0).z, "the lip is thrown out toward the beach, past the crest")
 	wave.hollowness = 0.0
-	_check(is_zero_approx(wave.barrel()) and wave.zone_at(-0.4) == WaveModel.Zone.WHITEWATER, "a spilling wave has no barrel")
+	_check(is_zero_approx(wave.barrel()) and wave.zone_at(-1.0) == WaveModel.Zone.WHITEWATER, "a spilling wave has no barrel")
 	wave.size = 0.0
 	wave.hollowness = 1.0
 	_check(is_zero_approx(wave.barrel()), "a tiny wave cannot hold a barrel")
@@ -137,12 +145,47 @@ func _test_wave_model() -> void:
 	var profile := wave.bake_profile()
 	_check(profile.get_width() == WaveModel.PROFILE_WIDTH and profile.get_format() == Image.FORMAT_RGBAH, "the baked profile is a half-float strip")
 	var matches := true
-	for index in [0, 90, 256, 380, WaveModel.PROFILE_WIDTH - 1]:
+	for index in [150, 256, 380, 450]:
 		var d := WaveModel.sample_distance(index)
 		var pixel := profile.get_pixel(index, 0)
-		matches = matches and absf(pixel.r - wave.crest_height_at(d)) < 0.002 and absf(pixel.g - wave.base_y_at(d)) < 0.002
-		matches = matches and absf(pixel.b - wave.throw_at(d)) < 0.002 and absf(pixel.a - wave.foam_at(d)) < 0.002
+		var section := wave.section(d)
+		matches = matches and absf(pixel.r - wave.crest_height_at(d)) < 0.01 and absf(pixel.g - section.points[section.face_to].x) < 0.01
+		matches = matches and absf(pixel.b - wave.curl_at(d)) < 0.002 and absf(pixel.a - wave.foam_at(d)) < 0.002
 	_check(matches, "the baked profile matches the model at sample points")
+
+
+func _test_wave_section() -> void:
+	var wave := WaveModel.new()
+	wave.size = 0.8
+	wave.hollowness = 1.0
+	var section := wave.section(-1.0)
+	var count := section.points.size()
+	_check(count > 20 and section.height_fraction.size() == count and section.foam.size() == count, "a section has shading attributes for every point")
+	var highest := 0.0
+	for point in section.points:
+		highest = maxf(highest, point.y)
+	_check(is_equal_approx(section.points[section.crest].y, highest), "the crest is the highest point of the section")
+	_check(absf(highest - wave.crest_height_at(-1.0)) < wave.crest_height_at(-1.0) * 0.12, "the section is as tall as the wave (%.2f of %.2f m)" % [highest, wave.crest_height_at(-1.0)])
+	_check(is_zero_approx(section.face_point(0.0).y) and section.face_point(1.0).y > section.face_point(0.5).y, "the face runs from the trough up")
+	_check(section.points[section.lip_tip].x > section.points[section.crest].x, "the lip tip is beyond the crest toward the beach")
+
+
+func _test_wave_mesh() -> void:
+	var wave := WaveModel.new()
+	wave.size = 0.9
+	wave.hollowness = 1.0
+	var mesh := WaveMesh.build(wave)
+	_check(mesh.get_surface_count() == 1, "the wave is one mesh surface")
+	var arrays := mesh.surface_get_arrays(0)
+	var stations := WaveMesh.station_distances().size()
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	_check(vertices.size() == stations * wave.section(0.0).points.size(), "the mesh has one ring of vertices per station")
+	_check(arrays[Mesh.ARRAY_COLOR] != null and arrays[Mesh.ARRAY_NORMAL] != null and arrays[Mesh.ARRAY_TEX_UV] != null, "the mesh carries normals, shading attributes and UVs")
+	var box := mesh.get_aabb()
+	_check(box.position.x < -WaveModel.PROFILE_AHEAD * 0.9 and box.end.x > WaveModel.PROFILE_BEHIND * 0.9, "the mesh runs the length of the profile")
+	_check(box.size.y > wave.height() * 0.8 and box.size.y < wave.height() * 1.25, "the mesh is as tall as the wave (%.2f of %.2f m)" % [box.size.y, wave.height()])
+	_check(is_equal_approx(WaveMesh.station_distances()[0], -WaveModel.PROFILE_BEHIND) and is_equal_approx(WaveMesh.station_distances()[stations - 1], WaveModel.PROFILE_AHEAD), "the stations cover the whole profile")
+
 
 func _test_noise_textures() -> void:
 	for texture: ImageTexture in [NoiseTextures.cells(), NoiseTextures.warp()]:
@@ -160,15 +203,10 @@ func _test_noise_textures() -> void:
 
 
 func _test_scale_marker() -> void:
-	var wave := WaveModel.new()
 	var marker := ScaleMarker.new()
-	marker.place(wave, 0.8, 0.3, 0.5, 720.0, 0.2)
-	_check(is_equal_approx(marker.position.y, wave.surface_y(0.3, 0.5) * 720.0), "the stand-in surfer's feet are on the model's surface")
-	_check(is_equal_approx(marker.position.x, (0.8 - 0.2) * 720.0), "the stand-in surfer shifts with the screen crop")
-	_check(is_equal_approx(marker.scale.y * ScaleMarker.TOTAL_HEIGHT, WaveModel.SURFER_HEIGHT * 720.0), "the stand-in surfer is the standard surfer height")
-	wave.size = 1.0
-	marker.place(wave, 0.8, 0.3, 0.5, 720.0, 0.2)
-	_check(is_equal_approx(marker.position.y, wave.surface_y(0.3, 0.5) * 720.0), "the surfer follows the surface when the wave grows")
+	marker.place(Vector2(640.0, 500.0), 180.0)
+	_check(marker.position == Vector2(640.0, 500.0), "the stand-in surfer's feet go where they are put")
+	_check(is_equal_approx(marker.scale.y * ScaleMarker.TOTAL_HEIGHT, 180.0), "the stand-in surfer is as tall as asked")
 	marker.free()
 
 
@@ -180,17 +218,29 @@ func _test_world() -> void:
 	world.set_wave(0.9, 1.0, 0.3)
 	await process_frame
 	await process_frame
-	var wave: WaveLayer = world.get_node("Wave")
-	var material := wave.material as ShaderMaterial
-	_check(material.get_shader_parameter("profile") is ImageTexture, "the wave shader has its profile texture")
-	_check(material.get_shader_parameter("noise_cells") is ImageTexture and material.get_shader_parameter("noise_warp") is ImageTexture, "the wave shader has its noise textures")
-	_check(wave.model.barrel() > 0.5 and is_equal_approx(material.get_shader_parameter("barrel"), wave.model.barrel()), "a big hollow wave tells the shader it is a barrel")
-	_check(is_equal_approx(material.get_shader_parameter("peel_x"), wave.peel_x), "the shader knows where the peel point is")
+	var stage: WaveStage = world.get_node("WaveStage")
+	var materials := stage.materials()
+	_check(materials.size() == 2 and materials[0].get_shader_parameter("noise_cells") is ImageTexture and materials[0].get_shader_parameter("noise_warp") is ImageTexture, "the wave shader has its noise textures")
+	_check(materials[1].get_shader_parameter("profile") is ImageTexture, "the sea shader has the wave's profile texture")
+	var mood: MoodData = root.get_node("Palette").current
+	_check(materials[0].get_shader_parameter("wave_mid") == mood.wave_mid and materials[1].get_shader_parameter("swell_top") == mood.swell_top, "the 3D wave and sea are fed the mood's colours")
+	_check(stage.model.barrel() > 0.5, "a big hollow wave is a barrel")
+
+	var feet := stage.model.surface_point(world.peel_offset, world.SURFER_FACE_HEIGHT)
+	var feet_px := stage.project(feet)
 	var marker: ScaleMarker = world.get_node("ScaleMarker")
-	var expected_y := wave.model.surface_y(world.peel_offset, world.SURFER_FACE_HEIGHT) * world.size.y
-	_check(absf(marker.position.y - expected_y) < 0.01, "the stand-in surfer stands on the face in the running scene")
+	_check(marker.position.is_equal_approx(feet_px), "the stand-in surfer stands on the face in the running scene")
+	_check(absf(feet_px.y / world.size.y - WaveStage.SURFER_SCREEN_Y) < 0.01, "the camera puts the surfer's feet at the planned height on screen")
+	var head_px := stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
+	var surfer_fraction := (feet_px.y - head_px.y) / world.size.y
+	_check(surfer_fraction > 0.18 and surfer_fraction < 0.36, "the surfer is about a quarter of the screen height, like the key frames (%.2f)" % surfer_fraction)
+
+	var spray := (world.get_node("Spray") as ColorRect).material as ShaderMaterial
+	var spray_centre: Vector2 = spray.get_shader_parameter("centre")
+	_check(spray.get_shader_parameter("radius") > 0.0 and spray_centre.y > 0.0 and spray_centre.y < 1.0, "the spray is centred on the crest, on screen")
 	world.free()
 	await process_frame
+
 
 func _test_tuning() -> void:
 	var tuning := load("res://data/tuning.tres") as TuningData

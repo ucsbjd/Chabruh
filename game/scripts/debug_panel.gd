@@ -5,8 +5,8 @@ extends PanelContainer
 
 signal values_changed(size: float, hollowness: float, peel_offset: float)
 
-const PEEL_MIN := -1.2
-const PEEL_MAX := 2.5
+const PEEL_MIN := -10.0
+const PEEL_MAX := 20.0
 
 var _size := HSlider.new()
 var _hollow := HSlider.new()

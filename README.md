@@ -24,13 +24,14 @@ Run these from the repo root in PowerShell.
 | Play it at http://localhost:8060 | `.\tools\serve.ps1` |
 | Deploy a temporary preview link | `.\tools\preview.ps1 -Step 1` |
 | Open the editor | `godot --path game --editor` |
-| Save a true-colour screenshot | `.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 0.35 -Mood sunset` |
+| Save a true-colour screenshot | `.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 3 -Mood sunset` |
+| Measure the frame time (vsync off) | `.\tools\capture.ps1 -Out shot.png -Perf -Frames 240 -Resolution 1920x1080` |
 
 ## Wave controls (temporary, until steering arrives in step 5)
 
-- **Sliders** for size, hollow and peel: add **`?debug`** to the URL or press **D**. They work with a finger. *Size* is how big the wave is, *hollow* goes from a spilling wave to a barrel, and *peel* slides the surfer along the wave (left of centre is ahead of the break, right of centre lets the break catch up and puts them under the lip).
+- **Sliders** for size, hollow and peel: add **`?debug`** to the URL or press **D**. They work with a finger. *Size* is how big the wave is, *hollow* goes from a spilling wave to a barrel, and *peel* slides the surfer along the wave, in meters ahead of the break (high is far ahead on the open shoulder, near zero or negative lets the break catch up and puts them under the lip, where a hollow wave has its barrel).
 - **Arrow keys**: up and down change the size, left and right slide the surfer along the wave. **`[` and `]`** change hollowness. **R** resets.
-- **`?size=0.8&hollow=1&peel=0.1`** on the URL start the wave in that state (each from 0 to 1, peel from -1.2 to 2.5).
+- **`?size=0.8&hollow=1&peel=-1`** on the URL start the wave in that state (size and hollow from 0 to 1, peel in meters from -10 to 20).
 
 ## Look controls (temporary)
 

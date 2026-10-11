@@ -2,11 +2,12 @@ extends SceneTree
 ## Renders the main scene in a real window and saves a PNG, so looks can be judged from true
 ## pixels (the browser pane's capture is colour-managed and washed out). Run it through
 ## tools/capture.ps1. Options go after `--`, as name=value:
-##   out=path.png  size=0.5  hollow=0.5  peel=0.45  mood=sunset  frames=45
-## It also prints the average frame time over the last two thirds of the frames. Add --disable-vsync
-## (and use plenty of frames) to see what the GPU can sustain.
+##   out=path.png  size=0.5  hollow=0.5  peel=3.0  mood=sunset  frames=45
+## (peel is how many meters ahead of the peel point the surfer is.) It also prints the average frame
+## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
+## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "0.45", "mood": "sunset", "frames": "45"}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45"}
 
 
 func _initialize() -> void:

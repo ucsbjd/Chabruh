@@ -23,12 +23,10 @@ func _ready() -> void:
 	_add(_circle(Vector2(0.0, -0.80), 0.065, 10), HAIR)
 
 
-## Puts the surfer on the face at `d` ahead of the peel point and `u` of the way up the face.
-## `x` is the surfer's place across the layout; `unit` is the screen height in pixels and `crop`
-## the layout width hidden off the left edge of a narrow screen.
-func place(model: WaveModel, x: float, d: float, u: float, unit: float, crop: float) -> void:
-	position = Vector2((x - crop) * unit, model.surface_y(d, u) * unit)
-	scale = Vector2.ONE * (WaveModel.SURFER_HEIGHT / TOTAL_HEIGHT * unit)
+## Stands the surfer with their feet at `feet` (control pixels), `pixels_tall` pixels high.
+func place(feet: Vector2, pixels_tall: float) -> void:
+	position = feet
+	scale = Vector2.ONE * (pixels_tall / TOTAL_HEIGHT)
 
 
 func _add(points: PackedVector2Array, colour: Color) -> void:

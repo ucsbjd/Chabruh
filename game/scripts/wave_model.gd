@@ -1,41 +1,46 @@
 class_name WaveModel
 extends RefCounted
-## The wave as a small physics-informed model. It draws nothing: it answers questions about
-## the wave's shape, and bakes the answers into a tiny texture so the shader and the surfer
-## read exactly the same numbers.
+## The wave as a small physics-informed model, in meters. It draws nothing: it answers questions
+## about the wave's shape, builds the cross-sections that the 3D mesh is swept from, and bakes
+## a small profile texture, so the mesh, the shaders and the surfer all read the same numbers.
 ##
-## Everything is a function of `d`, the distance ahead of the **peel point** (where the wave is
-## breaking right now), in screen heights. Positive d is ahead of the break (left on screen, the
-## way the surfer travels), negative d is behind it (the lip has thrown, the wall has collapsed).
-## Heights use screen heights too: y runs 0 at the top of the screen to 1 at the bottom.
+## Everything is a function of `d`, the distance in meters ahead of the **peel point** (where the
+## wave is breaking right now). Positive d is ahead of the break (the way the surfer travels, to
+## the left on screen); negative d is behind it, where the lip has thrown and the wall has
+## collapsed. World axes: x runs along the crest and is -d, y is up, and z runs toward the beach,
+## where the camera is.
 ##
 ## Real-world anchors (see CLAUDE.md): peel speed is celerity / sin(peel angle); steeper seabeds
-## throw bigger, rounder barrels; the lip lands ahead of the crest.
+## throw bigger, rounder barrels; the lip is a thrown jet that lands ahead of the crest.
 
 enum Zone { SHOULDER, POCKET, BARREL, WHITEWATER }
 
-## Where the face meets the trough nearest the peel point, and the horizon the wall recedes toward.
-const BASE_Y := 0.80
-const HORIZON := 0.40
-## The stand-in surfer's height, so wave sizes read as multiples of a surfer.
-const SURFER_HEIGHT := 0.26
+const SURFER_HEIGHT := 1.8
 
 ## The baked profile covers d from -PROFILE_BEHIND to +PROFILE_AHEAD, in PROFILE_WIDTH samples.
-const PROFILE_BEHIND := 1.6
-const PROFILE_AHEAD := 4.0
+const PROFILE_BEHIND := 30.0
+const PROFILE_AHEAD := 60.0
 const PROFILE_WIDTH := 512
 
-const MIN_HEIGHT := 0.20             # wave height at size 0, about 0.8 surfers
-const MAX_HEIGHT := 0.62             # wave height at size 1, about 2.4 surfers
-const SHOULDER_MIN := 0.38           # how low the wall tapers far ahead, as a fraction of its height
-const PERSPECTIVE_FAR := 0.55        # how far the base line climbs toward the horizon down the line
-const COLLAPSE_LENGTH := 0.7         # distance behind the peel point over which the wall falls apart
-const WHITEWATER_HEIGHT := 0.18      # fraction of the wall left once it has collapsed into foam
-const BUILD_LENGTH := 0.6            # distance ahead over which the lip starts to throw
-const LIP_LENGTH := 0.9              # how far behind the peel point the thrown lip lasts
-const POCKET_AHEAD := 0.55           # the pocket runs from here ahead of the peel point...
-const POCKET_BEHIND := -0.05         # ...to here, just behind it
+const MIN_HEIGHT := 1.4              # wave height at size 0, about 0.8 surfers
+const MAX_HEIGHT := 4.4              # wave height at size 1, about 2.4 surfers
+const SHOULDER_MIN := 0.30           # how low the wall tapers far ahead, as a fraction of its height
+const COLLAPSE_LENGTH := 4.5         # distance behind the peel point over which the wall falls apart
+const WHITEWATER_HEIGHT := 0.08      # fraction of the wall left once it has collapsed into foam
+const BUILD_LENGTH := 4.5            # distance ahead over which the lip starts to throw
+const LIP_LENGTH := 7.0              # how far behind the peel point the thrown lip lasts
+const POCKET_AHEAD := 3.8            # the pocket runs from here ahead of the peel point...
+const POCKET_BEHIND := -0.4          # ...to here, just behind it
 const BARREL_THRESHOLD := 0.35       # how much barrel there must be for the tube zone to exist
+
+# Cross-section proportions, as fractions of the wave height.
+const LIP_THICKNESS := 0.14          # at the crest, tapering to a thin tip
+const BARREL_RADIUS := 0.43          # inner radius of a full barrel
+const BACK_RUN := 3.2                # how far back the gentle back slope runs
+const POINTS_BACK := 12
+const POINTS_OUTER := 16
+const POINTS_INNER := 18
+const POINTS_FACE := 10
 
 ## 0 is a small wave, 1 is the biggest. Sets the height (and so how much barrel is possible).
 var size := 0.5:
@@ -53,8 +58,8 @@ var peel_angle_degrees := 40.0:
 	set(value):
 		peel_angle_degrees = clampf(value, 5.0, 85.0)
 
-## The wave's own speed toward the beach, in screen heights per second.
-var celerity := 0.5
+## The wave's own speed toward the beach, in meters per second.
+var celerity := 5.0
 
 
 ## Speed of the break along the crest: celerity / sin(peel angle) (Walker, 1974).
@@ -71,7 +76,7 @@ func peel_speed() -> float:
 	return peel_speed_for(celerity, peel_angle_degrees)
 
 
-## Height of the wall nearest the peel point, in screen heights.
+## Height of the wall nearest the peel point, in meters.
 func height() -> float:
 	return lerpf(MIN_HEIGHT, MAX_HEIGHT, size)
 
@@ -83,7 +88,7 @@ func barrel() -> float:
 
 ## How far ahead of the peel point the wall takes to taper down to its far end.
 func shoulder_length() -> float:
-	return lerpf(1.1, 2.0, size)
+	return lerpf(30.0, 52.0, size)
 
 
 ## 1 at the peel point and behind it, falling to SHOULDER_MIN far ahead.
@@ -93,23 +98,22 @@ func taper_at(d: float) -> float:
 	return lerpf(1.0, SHOULDER_MIN, smoothstep(0.0, 1.0, d / shoulder_length()))
 
 
-## 1 at the peel point and ahead of it, falling to WHITEWATER_HEIGHT far behind.
+## 1 at the peel point and ahead of it, falling to WHITEWATER_HEIGHT behind and then to nothing.
 func collapse_at(d: float) -> float:
 	if d >= 0.0:
 		return 1.0
-	return lerpf(1.0, WHITEWATER_HEIGHT, smoothstep(0.0, 1.0, -d / COLLAPSE_LENGTH))
+	var collapsed := lerpf(1.0, WHITEWATER_HEIGHT, smoothstep(0.0, 1.0, -d / COLLAPSE_LENGTH))
+	return collapsed * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
 
 
-## Height of the crest above the base line.
+## Height of the crest above the trough, in meters.
 func crest_height_at(d: float) -> float:
-	return height() * taper_at(d) * collapse_at(d)
+	return height() * taper_at(d) * collapse_at(d) * roll_at(d)
 
 
-## Where the face meets the trough. It climbs toward the horizon down the line, so the wall
-## recedes a little in perspective.
-func base_y_at(d: float) -> float:
-	var near := inverse_lerp(SHOULDER_MIN, 1.0, taper_at(d))
-	return HORIZON + (BASE_Y - HORIZON) * lerpf(PERSPECTIVE_FAR, 1.0, near)
+## A slow undulation along the crest, so the wall is never ruler-straight: swells in height of a few percent.
+func roll_at(d: float) -> float:
+	return 1.0 + 0.06 * sin(d * 0.31 + 0.7) + 0.035 * sin(d * 0.83 + 2.1)
 
 
 ## How far the lip has thrown, 0 to 1: it starts ahead of the break and lasts a while behind it.
@@ -119,16 +123,16 @@ func throw_at(d: float) -> float:
 	return 1.0 - smoothstep(LIP_LENGTH * 0.4, LIP_LENGTH, -d)
 
 
+## How curled the lip is at d, 0 to 1. Even a spilling wave keeps a little lip.
+func curl_at(d: float) -> float:
+	return throw_at(d) * lerpf(0.18, 1.0, barrel())
+
+
 ## How much of the face is foam, 0 to 1. Spilling waves start foaming ahead of the peel point;
 ## plunging ones only behind it.
 func foam_at(d: float) -> float:
-	var lead := lerpf(0.5, 0.0, barrel())
-	return 1.0 - smoothstep(-0.55, lead, d)
-
-
-## Screen height of the face surface `u` of the way up the face (0 at the base, 1 at the crest).
-func surface_y(d: float, u: float) -> float:
-	return base_y_at(d) - u * crest_height_at(d)
+	var lead := lerpf(4.0, 0.0, barrel())
+	return 1.0 - smoothstep(-4.0, lead, d)
 
 
 ## Angle of the face from horizontal, in radians: gentle at the base, steeper toward the crest,
@@ -149,16 +153,124 @@ func zone_at(d: float) -> Zone:
 	return Zone.WHITEWATER
 
 
-## The profile as a PROFILE_WIDTH by 1 image: red is the crest height, green the base line,
-## blue the lip throw and alpha the foam, sampled from -PROFILE_BEHIND to +PROFILE_AHEAD.
+## The cross-section of the wave at d. See WaveSection for the layout.
+##
+## It is built from simple curves: a gentle back slope, then an outer arc over the crest that is
+## thrown forward into the lip, a thin tip, an inner arc back under the lip (the roof of the
+## barrel), and a concave face that curls down to the trough. A circle of radius r centred at
+## (r, y_a) gives both arcs, so a full barrel is a near-round tube whose floor is the water.
+func section(d: float) -> WaveSection:
+	return section_for(crest_height_at(d), curl_at(d), foam_at(d))
+
+
+## The same cross-section for an explicit height (meters), curl and foam amount (both 0 to 1).
+func section_for(crest_meters: float, curl: float, foam_here: float) -> WaveSection:
+	var result := WaveSection.new()
+	var wave_h := maxf(crest_meters, 0.03)
+
+	var thick := wave_h * lerpf(0.025, LIP_THICKNESS, pow(curl, 0.7))
+	var tip_thick := wave_h * 0.012
+	var radius := curl * BARREL_RADIUS * wave_h
+	var centre_y := wave_h - radius - thick
+	var trough_z := lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius, curl)
+	var back_len := wave_h * BACK_RUN
+	var theta_start := deg_to_rad(105.0)
+	var theta_tip := deg_to_rad(lerpf(90.0, -40.0, curl))
+
+	# The back slope, rising gently to where the outer arc begins.
+	var arc_start := _arc_point(radius, centre_y, radius + thick, theta_start)
+	var arc_tangent := Vector2(sin(theta_start), -cos(theta_start))
+	var back_from := Vector2(-back_len, 0.0)
+	for i in POINTS_BACK:
+		var t := i / float(POINTS_BACK)
+		var p := _bezier(back_from, back_from + Vector2(back_len * 0.55, 0.0), arc_start - arc_tangent * (back_len * 0.28), arc_start, t)
+		result.add(p, p.y / wave_h, foam_here * 0.95, 0.0, 0.2 * (1.0 - p.y / wave_h))
+
+	# The outer arc over the crest and down the front of the lip, thinning toward the tip.
+	for i in POINTS_OUTER:
+		var t := i / float(POINTS_OUTER - 1)
+		var theta := lerpf(theta_start, theta_tip, t)
+		var thin := pow(1.0 - t, 0.8)
+		var arc_radius := radius + tip_thick + (thick - tip_thick) * thin
+		var p := _arc_point(radius, centre_y, arc_radius, theta)
+		var tip_foam := smoothstep(0.55, 1.0, t) * curl
+		var index := result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), 0.0, 1.0 - thin * 0.8)
+		if p.y >= result.points[result.crest].y:
+			result.crest = index
+	result.lip_tip = result.points.size() - 1
+
+	# The inner arc: back from the tip, up under the lip (the roof of the barrel) and round to the face.
+	for i in POINTS_INNER:
+		var t := (i + 1) / float(POINTS_INNER)
+		var theta := lerpf(theta_tip, PI, t)
+		var p := _arc_point(radius, centre_y, radius, theta)
+		var tip_foam := (1.0 - smoothstep(0.0, 0.35, t)) * curl
+		result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), curl * lerpf(0.3, 1.0, t), 1.0 - t * 0.7)
+
+	# The face: concave, curling down to the trough. For a full barrel this is the tube's floor curve.
+	var face_top := result.points[result.points.size() - 1]
+	var trough := Vector2(trough_z, 0.0)
+	result.face_from = result.points.size() - 1
+	for i in POINTS_FACE:
+		var t := (i + 1) / float(POINTS_FACE)
+		var p := _bezier(face_top, face_top + Vector2(0.0, -face_top.y * 0.5523), trough - Vector2(trough_z * 0.5523, 0.0), trough, t)
+		result.add(p, p.y / wave_h, foam_here, curl * lerpf(0.9, 0.5, t), 0.1)
+	result.face_to = result.points.size() - 1
+
+	# The water in front of the wave is a separate plane, so the section ends at the trough.
+	return result
+
+
+## The point `u` of the way up the face at d, as a world position (x along the crest, y up, z
+## toward the beach). u is 0 at the trough and 1 at the top of the face.
+func surface_point(d: float, u: float) -> Vector3:
+	var p := section(d).face_point(u)
+	return Vector3(-d, p.y, p.x)
+
+
+## The outward (into the air) unit normal of the face at d and u, in world axes.
+func surface_normal(d: float, u: float) -> Vector3:
+	var n := section(d).face_normal(u)
+	return Vector3(0.0, n.y, n.x)
+
+
+## The crest at d, where the lip is thrown from: a world position.
+func crest_point(d: float) -> Vector3:
+	var s := section(d)
+	var p := s.points[s.crest]
+	return Vector3(-d, p.y, p.x)
+
+
+## The tip of the lip at d, a world position.
+func lip_tip_point(d: float) -> Vector3:
+	var s := section(d)
+	var p := s.points[s.lip_tip]
+	return Vector3(-d, p.y, p.x)
+
+
+## The profile as a PROFILE_WIDTH by 1 image, sampled from -PROFILE_BEHIND to +PROFILE_AHEAD:
+## red is the crest height in meters, green is where the trough is (z), blue the curl and
+## alpha the foam. Shaders use it to put foam and shadow where the wave is.
 func bake_profile() -> Image:
 	var image := Image.create(PROFILE_WIDTH, 1, false, Image.FORMAT_RGBAH)
 	for i in PROFILE_WIDTH:
 		var d := sample_distance(i)
-		image.set_pixel(i, 0, Color(crest_height_at(d), base_y_at(d), throw_at(d), foam_at(d)))
+		var curl := curl_at(d)
+		var wave_h := crest_height_at(d)
+		var trough_z := lerpf(wave_h * lerpf(2.0, 1.1, hollowness), curl * BARREL_RADIUS * wave_h, curl)
+		image.set_pixel(i, 0, Color(wave_h, trough_z, curl, foam_at(d)))
 	return image
 
 
 ## The distance d that sample `index` of the baked profile stands for.
 static func sample_distance(index: int) -> float:
 	return lerpf(-PROFILE_BEHIND, PROFILE_AHEAD, index / float(PROFILE_WIDTH - 1))
+
+
+static func _arc_point(centre_z: float, centre_y: float, arc_radius: float, theta: float) -> Vector2:
+	return Vector2(centre_z + arc_radius * cos(theta), centre_y + arc_radius * sin(theta))
+
+
+static func _bezier(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
+	var u := 1.0 - t
+	return p0 * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + p3 * (t * t * t)

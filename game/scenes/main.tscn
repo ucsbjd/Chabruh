@@ -3,24 +3,17 @@
 [ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
 [ext_resource type="Script" path="res://scripts/ridge_layer.gd" id="2_ridge"]
 [ext_resource type="Script" path="res://scripts/debug_fps.gd" id="3_fps"]
-[ext_resource type="Script" path="res://scripts/wave_layer.gd" id="10_wave_layer"]
+[ext_resource type="Script" path="res://scripts/wave_stage.gd" id="10_stage"]
+[ext_resource type="Shader" path="res://shaders/spray.gdshader" id="13_spray"]
 [ext_resource type="Script" path="res://scripts/scale_marker.gd" id="11_marker"]
 [ext_resource type="Script" path="res://scripts/debug_panel.gd" id="12_panel"]
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="4_sky"]
-[ext_resource type="Shader" path="res://shaders/wave.gdshader" id="5_wave"]
-[ext_resource type="Shader" path="res://shaders/swell.gdshader" id="6_swell"]
 [ext_resource type="Shader" path="res://shaders/glow.gdshader" id="7_glow"]
 [ext_resource type="Shader" path="res://shaders/grade.gdshader" id="8_grade"]
 [ext_resource type="Shader" path="res://shaders/grain.gdshader" id="9_grain"]
 
 [sub_resource type="ShaderMaterial" id="mat_sky"]
 shader = ExtResource("4_sky")
-
-[sub_resource type="ShaderMaterial" id="mat_wave"]
-shader = ExtResource("5_wave")
-
-[sub_resource type="ShaderMaterial" id="mat_swell"]
-shader = ExtResource("6_swell")
 
 [sub_resource type="ShaderMaterial" id="mat_glow"]
 shader = ExtResource("7_glow")
@@ -30,6 +23,9 @@ shader = ExtResource("8_grade")
 
 [sub_resource type="ShaderMaterial" id="mat_grain"]
 shader = ExtResource("9_grain")
+
+[sub_resource type="ShaderMaterial" id="mat_spray"]
+shader = ExtResource("13_spray")
 
 [node name="World" type="Control"]
 layout_mode = 3
@@ -69,8 +65,7 @@ haze_amount = 0.25
 palm_clusters = 3
 palm_height = 0.17
 
-[node name="Wave" type="ColorRect" parent="."]
-material = SubResource("mat_wave")
+[node name="WaveStage" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -78,13 +73,13 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-script = ExtResource("10_wave_layer")
+script = ExtResource("10_stage")
 
 [node name="ScaleMarker" type="Node2D" parent="."]
 script = ExtResource("11_marker")
 
-[node name="Swell" type="ColorRect" parent="."]
-material = SubResource("mat_swell")
+[node name="Spray" type="ColorRect" parent="."]
+material = SubResource("mat_spray")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

@@ -15,7 +15,7 @@ static func cells() -> ImageTexture:
 	noise.cellular_jitter = 1.0
 	noise.frequency = 0.035
 	noise.seed = 7
-	return ImageTexture.create_from_image(noise.get_seamless_image(SIZE, SIZE))
+	return _texture(noise)
 
 
 ## Smooth blotchy noise, used to wobble band edges and to cut ragged shapes.
@@ -26,4 +26,10 @@ static func warp() -> ImageTexture:
 	noise.fractal_octaves = 3
 	noise.frequency = 0.02
 	noise.seed = 21
-	return ImageTexture.create_from_image(noise.get_seamless_image(SIZE, SIZE))
+	return _texture(noise)
+
+
+static func _texture(noise: FastNoiseLite) -> ImageTexture:
+	var image := noise.get_seamless_image(SIZE, SIZE)
+	image.generate_mipmaps()
+	return ImageTexture.create_from_image(image)

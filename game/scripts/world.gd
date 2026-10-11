@@ -1,44 +1,52 @@
 extends Control
-## Composes the look: owns the shared layout (horizon, sun, where the surfer stands), advances
-## time and travel, and feeds the current mood to every layer. Layers are the child nodes, drawn
-## back to front.
+## Composes the look: owns the shared layout (horizon, sun), advances time and travel, frames the
+## 3D wave with the camera, stands the stand-in surfer on its surface, and feeds the current mood
+## to every layer. Layers are the child nodes, drawn back to front.
 
-## How fast the scenery slides, in screen heights per second. The surfer travels right to left,
+## How fast the 2D scenery slides, in screen heights per second. The surfer travels right to left,
 ## so the world slides left to right.
 const TRAVEL_SPEED := 0.16
 const HORIZON := 0.40
 const SUN_X_FRACTION := 0.40
 const SUN_Y := 0.20
-## The scene is composed for at least this width (in screen heights). On a narrower screen,
-## such as a phone held upright, the middle of the composition is shown and the sides are cropped.
+## The 2D backdrop is composed for at least this width (in screen heights). On a narrower screen
+## the middle of it is shown and the sides are cropped. (The 3D wave crops through its camera.)
 const MIN_LAYOUT_ASPECT := 1.5
 
-## Where the stand-in surfer stands: across the layout, and how far up the wave's face.
-const SURFER_X_FRACTION := 0.44
+## Where the stand-in surfer stands on the wave's face: 0 at the trough, 1 at the top of the face.
 const SURFER_FACE_HEIGHT := 0.5
+## The camera looks left from behind the surfer, and swings round to look right from ahead of them as
+## a barrel forms, so the tube's mouth faces the camera. Degrees, and the surfer's place across the screen.
+const CAMERA_YAW_OPEN := 30.0
+const CAMERA_YAW_BARREL := -26.0
+const SURFER_SCREEN_X_OPEN := 0.44
+const SURFER_SCREEN_X_BARREL := 0.54
+const CAMERA_SWING_RATE := 2.5
 ## Temporary controls: how fast the held keys change things, per second.
 const SIZE_RATE := 0.4
 const HOLLOW_RATE := 0.4
-const PEEL_RATE := 0.6
+const PEEL_RATE := 8.0
 const DEFAULT_SIZE := 0.6
 const DEFAULT_HOLLOW := 0.5
-const DEFAULT_PEEL_OFFSET := 0.45
+const DEFAULT_PEEL_OFFSET := 3.0
 
 var _time := 0.0
 var _travel := 0.0
 var _crop := 0.0   # screen heights hidden on each side when the screen is narrower than the layout
-var _layout_aspect := MIN_LAYOUT_ASPECT
-## How far ahead of the peel point the surfer is. Positive is ahead (to the left), negative is
-## behind it, where the lip throws and the barrel is.
+## How far ahead of the peel point the surfer is, in meters. Positive is ahead (to the left),
+## negative is behind it, where the lip throws and the barrel is.
 var peel_offset := DEFAULT_PEEL_OFFSET
+var _swing := 0.0   # 0 behind the surfer, 1 swung round to the barrel side
+var _first_frame := true
 
 var _ridges: Array[RidgeLayer] = []
 ## Each shader material with the mood properties it declares as uniforms.
 var _mood_uniforms: Array[Dictionary] = []
 var _materials: Array[ShaderMaterial] = []
 
-@onready var _wave: WaveLayer = $Wave
+@onready var _stage: WaveStage = $WaveStage
 @onready var _surfer: ScaleMarker = $ScaleMarker
+@onready var _spray: ColorRect = $Spray
 @onready var _panel: DebugPanel = $DebugPanel
 
 
@@ -49,6 +57,8 @@ func _ready() -> void:
 			_ridges.append(child)
 		elif child is CanvasItem and child.material is ShaderMaterial:
 			_register(child.material)
+	for material in _stage.materials():
+		_register(material)
 	_panel.values_changed.connect(_on_panel_changed)
 	resized.connect(_on_resized)
 	Palette.changed.connect(_apply_mood)
@@ -66,9 +76,7 @@ func _process(delta: float) -> void:
 		material.set_shader_parameter("travel", _travel)
 	for ridge in _ridges:
 		ridge.place(_travel, size.y, _crop)
-	var surfer_x := _layout_aspect * SURFER_X_FRACTION
-	_wave.peel_x = surfer_x + peel_offset
-	_surfer.place(_wave.model, surfer_x, peel_offset, SURFER_FACE_HEIGHT, size.y, _crop)
+	_place_surfer_and_spray()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -76,14 +84,40 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.pressed and not event.echo and event.keycode == KEY_M:
 			Palette.cycle()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
-			_wave.model.size = DEFAULT_SIZE
-			_wave.model.hollowness = DEFAULT_HOLLOW
-			peel_offset = DEFAULT_PEEL_OFFSET
-			_apply_wave()
+			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
 	# Touches arrive as emulated mouse clicks, so this one branch covers phone and desktop.
 	elif event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			Palette.cycle()
+
+
+## Sets the wave's size and hollowness (both 0 to 1) and how far ahead of the peel point, in
+## meters, the surfer is.
+func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
+	_stage.model.size = wave_size
+	_stage.model.hollowness = hollowness
+	peel_offset = clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX)
+	_stage.rebuild()
+	_panel.show_values(wave_size, hollowness, peel_offset)
+
+
+## Frames the camera on the surfer and stands the stand-in surfer and the spray cloud on the wave.
+func _place_surfer_and_spray() -> void:
+	var model := _stage.model
+	var feet := model.surface_point(peel_offset, SURFER_FACE_HEIGHT)
+	var target_swing := model.barrel()
+	_swing = target_swing if _first_frame else lerpf(_swing, target_swing, 1.0 - exp(-CAMERA_SWING_RATE * get_process_delta_time()))
+	_first_frame = false
+	_stage.frame(feet, lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing), lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing))
+	var feet_px := _stage.project(feet)
+	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
+	_surfer.place(feet_px, feet_px.y - head_px.y)
+
+	var crest_px := _stage.project(model.crest_point(0.0))
+	var pixels_per_meter := (feet_px.y - head_px.y) / WaveModel.SURFER_HEIGHT
+	var spray_material := _spray.material as ShaderMaterial
+	spray_material.set_shader_parameter("centre", Vector2(crest_px.x / size.x * (size.x / size.y), crest_px.y / size.y))
+	spray_material.set_shader_parameter("radius", minf(model.height() * 0.7 * pixels_per_meter / size.y, 0.30))
 
 
 ## Up and down change the size, [ and ] the hollowness, left and right slide the surfer along the
@@ -93,30 +127,14 @@ func _read_held_keys(delta: float) -> void:
 	var hollow_change := (float(Input.is_key_pressed(KEY_BRACKETRIGHT)) - float(Input.is_key_pressed(KEY_BRACKETLEFT))) * HOLLOW_RATE * delta
 	var peel_change := Input.get_axis("ui_right", "ui_left") * PEEL_RATE * delta
 	if size_change != 0.0 or hollow_change != 0.0 or peel_change != 0.0:
-		_wave.model.size += size_change
-		_wave.model.hollowness += hollow_change
-		peel_offset = clampf(peel_offset + peel_change, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX)
-		_apply_wave()
-
-
-## Sets the wave's size and hollowness (both 0 to 1) and how far ahead of the peel point the surfer is.
-func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
-	_wave.model.size = wave_size
-	_wave.model.hollowness = hollowness
-	peel_offset = clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX)
-	_apply_wave()
+		set_wave(_stage.model.size + size_change, _stage.model.hollowness + hollow_change, peel_offset + peel_change)
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
-	_wave.model.size = wave_size
-	_wave.model.hollowness = hollowness
+	_stage.model.size = wave_size
+	_stage.model.hollowness = hollowness
 	peel_offset = ahead_of_peel
-	_wave.rebake()
-
-
-func _apply_wave() -> void:
-	_wave.rebake()
-	_panel.show_values(_wave.model.size, _wave.model.hollowness, peel_offset)
+	_stage.rebuild()
 
 
 func _register(material: ShaderMaterial) -> void:
@@ -133,12 +151,12 @@ func _register(material: ShaderMaterial) -> void:
 
 func _on_resized() -> void:
 	var aspect := size.x / size.y
-	_layout_aspect = maxf(aspect, MIN_LAYOUT_ASPECT)
-	_crop = (_layout_aspect - aspect) * 0.5
-	var sun_pos := Vector2(_layout_aspect * SUN_X_FRACTION, SUN_Y)
+	var layout_aspect := maxf(aspect, MIN_LAYOUT_ASPECT)
+	_crop = (layout_aspect - aspect) * 0.5
+	var sun_pos := Vector2(layout_aspect * SUN_X_FRACTION, SUN_Y)
 	for material in _materials:
 		material.set_shader_parameter("aspect", aspect)
-		material.set_shader_parameter("layout_aspect", _layout_aspect)
+		material.set_shader_parameter("layout_aspect", layout_aspect)
 		material.set_shader_parameter("horizon", HORIZON)
 		material.set_shader_parameter("sun_pos", sun_pos)
 

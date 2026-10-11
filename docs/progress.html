@@ -137,7 +137,7 @@
   <div class="sun" aria-hidden="true"></div>
   <div class="inner">
     <h1 class="title">Chabruh</h1>
-    <p class="sub">Build tracker for the 2D surf game. Slow, sunny, no bad guys. Eight steps, each one checked before the next begins.</p>
+    <p class="sub">Build tracker for the 2D surf game. Slow, sunny, no bad guys. Nine steps, each one checked before the next begins.</p>
     <div class="meter" id="meter" role="img" aria-label="Progress"></div>
     <div class="meter-label" id="meterLabel"></div>
   </div>
@@ -171,14 +171,15 @@
   <div class="card">
     <table>
       <tr><th>Godot 4.7</th><td>One project exports to web now and Android later. Built-in 2D shaders and particles, text-based scenes Claude can edit, and a command line that can test and export headlessly.</td></tr>
-      <tr><th>Flat-shaded 2D, not pixel art</th><td>Over the Hill is soft, flat-shaded shapes in warm hazy light, not pixels. Our version is vector-style layers with purple shadows and an 80s sunset palette. <strong>Tell me early if you would rather have pixel art.</strong> It changes steps 2, 3 and 5.</td></tr>
+      <tr><th>Flat-shaded 2D, not pixel art</th><td>Over the Hill is soft, flat-shaded shapes in warm hazy light, not pixels. Our version is vector-style layers with purple shadows and an 80s sunset palette. <strong>Tell me early if you would rather have pixel art.</strong> It changes steps 2, 3, 4 and 6.</td></tr>
+      <tr><th>A parametric wave, not sprites or a fluid sim</th><td>Real waves are a few numbers (size, steepness, peel angle) swept along a crest. A small model computes the shape, a shader draws it, and particles add spray. It scales from a ripple to a barrel, the surfer can ride its exact surface, and it is cheap on a phone. Wave sprites cannot change size or react to the surfer, and a fluid simulation is too heavy and too hard to art-direct.</td></tr>
       <tr><th>Procedural art first</th><td>Everything is drawn with code and shaders, so Claude can build and tune it without art tools. Hand-made sprites can replace pieces later.</td></tr>
       <tr><th>No fail state</th><td>A wipeout is a soft tumble and a paddle back. There is no score, timer, or game over, in line with the vibe.</td></tr>
       <tr><th>Preview, then live</th><td>Each step is deployed to a temporary Firebase preview link for checking on your phone. It only goes to the live site when you say Done.</td></tr>
     </table>
   </div>
 
-  <h2>After step 8: design iteration</h2>
+  <h2>After step 9: design iteration</h2>
   <div class="card">
     <ul>
       <li>Sharpen the look: more palette moods, a pixel or dither toggle, hand-drawn sprites swapped in for procedural ones.</li>
@@ -246,10 +247,30 @@ const STEPS = [
   },
   {
     n: 3, status: "todo",
+    title: "The living wave: model and look",
+    goal: "A big, believable wave that can change size and shape, drawn from a small physics-informed model that the surfer will later ride on.",
+    build: [
+      "WaveModel (GDScript, no drawing): inputs are size, hollowness (spilling to plunging) and peel speed. Every shape is a function of the distance to the peel point, so the wall builds, the lip throws on a ballistic arc, the barrel opens, then collapses into whitewater.",
+      "A surface API for gameplay: face height, slope and surface point at a position and a height up the face, plus the zone you are in (shoulder, pocket, barrel, whitewater). Unit-tested, including how size and hollowness scale.",
+      "Wave v2, drawn by a shader from the model: a much bigger concave face, a teardrop barrel with a thick lip curtain whose underside is white with air, fine veins running up the face, foam lace on the whitewater, and mist feathering off the crest in the wind. Detail textures are generated at load, so the download stays small.",
+      "Size scaling: a small wave spills, a big wave plunges into a barrel. Temporary keys (and ?size= and ?hollow= in the URL) change size and hollowness, and other keys slide the peel point so you can watch the barrel catch up with the surfer or fall behind.",
+      "A simple scale-marker surfer, a few flat shapes and not the final art, standing on the face at the model's surface point so we can judge size. Step 4 replaces it.",
+      "Performance: measure with the desktop --print-fps runs at 720p, 1080p and 1440p, and add a reduced-resolution option if the wave is too heavy for a phone."
+    ],
+    notNow: ["The final surfer art and poses, controls, spray particles, sound."],
+    verify: [
+      "Next to barrel.jpg and wave1.webp: the wave dwarfs the surfer, with a concave face, a teardrop barrel, a thick lip with a white underside, face veins, foam lace and crest mist.",
+      "Growing and shrinking the wave changes its character: small is a spilling slope, big throws a barrel.",
+      "Sliding the peel point moves the barrel over the scale-marker surfer, or away from them, and the surfer stays on the face.",
+      "Still smooth on my phone (use ?fps), and the console stays clean while I change size.",
+      "Claude reports measured frame times and the download size."
+    ]
+  },  {
+    n: 4, status: "todo",
     title: "The surfer and pose library",
     goal: "A flat-shaded 80s surfer who can hit the athletic poses from the storyboard and blend smoothly between them.",
     build: [
-      "A paper-doll rig made of Polygon2D / Node2D parts (torso, head and hair, two arms, two legs, board) in a neon colour-blocked wetsuit with a bold 80s board graphic. Flat shading with a violet shadow side. The surfer is regular stance (left foot forward), travelling right to left with their back to the camera, so every pose is drawn from behind and slightly to the side.",
+      "A paper-doll rig made of Polygon2D / Node2D parts (torso, head and hair, two arms, two legs, board) in a neon colour-blocked wetsuit with a bold 80s board graphic. Flat shading with a violet shadow side. The surfer is regular stance (left foot forward), travelling right to left with their back to the camera, so every pose is drawn from behind and slightly to the side. It replaces the scale-marker surfer from step 3.",
       "A pose library stored as data (angles and offsets per joint): walk-in with board, prone paddle, pop-up, trim, bottom-turn crouch, top-turn snap with arms out, cutback, deep barrel crouch with hand-drag, air (board vertical, arms up), floater, soft wipeout tumble.",
       "Smooth blending between poses (about 0.15 s), the board tilting with the pose, and a small idle sway.",
       "A pose gallery scene reachable with ?gallery on the URL, showing every pose in a grid plus a cycler."
@@ -258,16 +279,16 @@ const STEPS = [
     verify: [
       "The gallery next to the storyboard photos: each pose reads as the right athletic move at a glance, silhouette first.",
       "Blending between any two poses is smooth, with no limb popping or detaching.",
-      "The surfer looks good against the step 2 wave (contrast, shadow colour)."
+      "The surfer looks good against the step 3 wave (contrast, shadow colour, scale)."
     ]
   },
   {
-    n: 4, status: "todo",
+    n: 5, status: "todo",
     title: "Riding and feel",
     goal: "Catch a wave and ride it. It should feel good in the hand before any effects are added.",
     build: [
       "Surfer states: paddle, automatic pop-up, ride, soft wipeout, drift back. The pose follows the motion (low and turning up is a bottom turn, high and turning down is a top turn, flat and fast is trim).",
-      "Motion model: position along the wave and height on the face, speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
+      "Motion model on top of the step 3 WaveModel: the surfer's distance to the peel point and height up the face (the model gives the slope), speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
       "Input: mouse X plus the wheel on desktop, arrow keys / WASD as a fallback, two-finger drag on mobile (horizontal steers, vertical changes height). The wheel and touch must never scroll or zoom the page.",
       "A camera that follows the surfer smoothly.",
       "A tuning resource with Feel (dead zone, response curve) and Reach dials, and a small hidden tuning panel (backtick key or triple-tap)."
@@ -281,7 +302,7 @@ const STEPS = [
     ]
   },
   {
-    n: 5, status: "todo",
+    n: 6, status: "todo",
     title: "Spray and water effects",
     goal: "The signature of the game: big, dynamic spray like the storyboard photos.",
     build: [
@@ -299,12 +320,12 @@ const STEPS = [
     ]
   },
   {
-    n: 6, status: "todo",
+    n: 7, status: "todo",
     title: "Wave cycle: lineup, set, barrel",
     goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
     build: [
       "Lineup intro: calm water, walk or paddle out, a lull with idle floating, then a set approaches (swell lines on the horizon).",
-      "Wave life along the ride: swell, shoulder, barrel section, closeout. The lip throws out and a tube opens around the surfer.",
+      "Each wave plays out the model's life cycle (swell, shoulder, barrel section, closeout), with size and hollowness varying from set to set.",
       "Tube moment: gentler camera framing or zoom, light glowing through the lip, the deep crouch with hand-drag pose, hushed.",
       "End of ride (the wave closes out or you kick out): drift back to the lineup, next set after a lull. No score, no stats.",
       "Lulls and sets vary a little but always feel calm."
@@ -317,7 +338,7 @@ const STEPS = [
     ]
   },
   {
-    n: 7, status: "todo",
+    n: 8, status: "todo",
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
@@ -335,7 +356,7 @@ const STEPS = [
     ]
   },
   {
-    n: 8, status: "todo",
+    n: 9, status: "todo",
     title: "Mobile polish and ship v0.1",
     goal: "Something I can send to a friend's phone.",
     build: [
@@ -368,7 +389,9 @@ const REFERENCES = [
   ["images (9).jpg", "Top turn"],
   ["images.jpg", "Palette mood"],
   ["licensed-image.jpg", "Glassy barrel"],
-  ["licensed-image (1).jpg", "Tube, hand-drag"]
+  ["licensed-image (1).jpg", "Tube, hand-drag"],
+  ["barrel.jpg", "Real barrel, scale"],
+  ["wave1.webp", "Heavy wave, foam lace"]
 ];
 
 // ---- Prompt builders -------------------------------------------------------

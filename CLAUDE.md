@@ -44,7 +44,7 @@ Look-and-feel is **flat-shaded vector style, not pixel art**. A pixel-crunch/dit
 
 ### Storyboard references (`storyboardimages/`, local only, copyrighted, never commit or deploy)
 
-12 photos and stills. What each is for:
+14 photos and stills. What each is for:
 
 - `images (1).jpg`: 80s surfer in a neon lime and black wetsuit walking out carrying a board with a bold red graphic. Costume and board look, and the paddle-out intro.
 - `images (2).jpg`: low carving turn on a teal face, arms wide, board on its rail, spray fanning behind.
@@ -54,6 +54,8 @@ Look-and-feel is **flat-shaded vector style, not pixel art**. A pixel-crunch/dit
 - `images.jpg`: Vice City style sunset art with palms and pastel buildings. Palette and mood.
 - `licensed-image.jpg`: glassy turquoise barrel at golden hour with light glowing through the lip. A tiny surfer inside the tube.
 - `licensed-image (1).jpg`: Teahupoo-style barrel, surfer crouched low in the pocket, trailing a hand on the wall.
+- `barrel.jpg`: a real barrel seen from the beach, the best guide to wave **shape and scale**. A long wall about six surfers tall. Glassy aqua and translucent at the thin crest, deeper teal at the base, fine veins running up the face. A tall teardrop barrel on the right with a thick lip whose underside is white with air. Backlit wind-blown mist streams off the crest. Foam bursts at the base. The surfer is tiny.
+- `wave1.webp`: a heavy closing wave, the guide for **foam**. A huge white-water curtain falls on one side and foam lace (networks of white lines) drapes over a dark olive face. The surfer is tiny at the bottom.
 
 The surfer is seen mostly from behind and slightly from the side. Several storyboard photos show the front, so mirror the idea of each pose (arm shapes, crouch depth, board angle), not the camera angle.
 
@@ -67,6 +69,15 @@ Poses the surfer needs: walk-in with board, prone paddle, pop-up, trim stance, b
 - Spray scales with speed times how sharply you turn. Top-of-the-wave snaps throw the big fan. Air and hang-time matter. The tube is the calm, glowing reward.
 - Controls: desktop, mouse X steers along the wave and the mouse wheel sets height on the face (arrow keys / WASD as a fallback). Mobile, two-finger drag: horizontal steers, vertical changes height. Smooth and clamp everything. Never let the wheel scroll the page.
 - Forgiving by default. Expose feel dials in one tuning resource (dead zone, response curve, reach).
+
+## The wave (decided in step 3)
+
+The wave is the key feature, with the surfer. It is a **parametric, physics-informed model drawn by a shader**, not wave sprites and not a fluid simulation.
+
+- **Why:** sprites cannot change size or react to the surfer; a fluid sim is too heavy for a phone and cannot be art-directed. A model gives the shader its shape *and* gives gameplay an exact surface to ride, so the two cannot disagree.
+- **Inputs:** size (height), hollowness (spilling to plunging), peel speed. Every shape is a function of the distance `d` to the **peel point** (where the wave is breaking right now): the wall builds ahead of it, the lip throws at it, the barrel opens and collapses into whitewater behind it. The surfer's `d` and their height up the face are their coordinates; the camera follows them, so a slower surfer is caught by the barrel and a faster one outruns the wave.
+- **Real-world anchors:** peel speed is `Cb / sin(peel angle)`, and 30 to 50 degrees is rideable (below about 27 it is too fast). Steeper seabeds throw bigger, rounder barrels with thicker jets; gentle ones give small spilling waves. The lip is a ballistic jet that lands ahead of the crest. At full size the surfer is about one sixth of the wave's height.
+- **Rendering:** shader for the wall, barrel and lip; noise textures generated once at load for face veins and foam lace (never per-pixel fbm); particles with soft procedural textures for mist and splash. Sprites only exist as small particle textures.
 
 ## Tech
 

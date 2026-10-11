@@ -1,8 +1,11 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
 [ext_resource type="Script" path="res://scripts/ridge_layer.gd" id="2_ridge"]
 [ext_resource type="Script" path="res://scripts/debug_fps.gd" id="3_fps"]
+[ext_resource type="Script" path="res://scripts/wave_layer.gd" id="10_wave_layer"]
+[ext_resource type="Script" path="res://scripts/scale_marker.gd" id="11_marker"]
+[ext_resource type="Script" path="res://scripts/debug_panel.gd" id="12_panel"]
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="4_sky"]
 [ext_resource type="Shader" path="res://shaders/wave.gdshader" id="5_wave"]
 [ext_resource type="Shader" path="res://shaders/swell.gdshader" id="6_swell"]
@@ -75,6 +78,10 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+script = ExtResource("10_wave_layer")
+
+[node name="ScaleMarker" type="Node2D" parent="."]
+script = ExtResource("11_marker")
 
 [node name="Swell" type="ColorRect" parent="."]
 material = SubResource("mat_swell")
@@ -127,3 +134,15 @@ theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 20
 text = "fps"
 script = ExtResource("3_fps")
+
+[node name="DebugPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = -140.0
+offset_right = 360.0
+offset_bottom = -14.0
+grow_vertical = 0
+script = ExtResource("12_panel")

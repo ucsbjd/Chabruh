@@ -87,7 +87,9 @@ The wave is the key feature, with the surfer. It is a **parametric, physics-info
 - **Why:** sprites cannot change size or react to the surfer; a fluid sim is too heavy for a phone and cannot be art-directed. A model gives the shader its shape *and* gives gameplay an exact surface to ride, so the two cannot disagree.
 - **Inputs:** size (height), hollowness (spilling to plunging), peel speed. Every shape is a function of the distance `d` to the **peel point** (where the wave is breaking right now): the wall builds ahead of it, the lip throws at it, the barrel opens and collapses into whitewater behind it. The surfer's `d` and their height up the face are their coordinates; the camera follows them, so a slower surfer is caught by the barrel and a faster one outruns the wave.
 - **Real-world anchors:** peel speed is `Cb / sin(peel angle)`, and 30 to 50 degrees is rideable (below about 27 it is too fast). Steeper seabeds throw bigger, rounder barrels with thicker jets; gentle ones give small spilling waves. The lip is a ballistic jet that lands ahead of the crest. Scale follows the key frames (see Art direction): the surfer is about 0.26 of the screen height and the default wave face is about 1.7 times that.
-- **Rendering:** shader for the wall, barrel and lip; noise textures generated once at load for face veins and foam lace (never per-pixel fbm); particles with soft procedural textures for mist and splash. Sprites only exist as small particle textures.
+- **Rendering:** `WaveModel` (`scripts/wave_model.gd`) answers questions about the shape and **bakes its profile into a 512 by 1 half-float texture**: red is the crest height, green the base line, blue the lip throw, alpha the foam, all as a function of `d`. `WaveLayer` uploads it and `shaders/wave.gdshader` only turns those numbers into pixels, so the shader and the surfer cannot disagree. Face veins and foam clumps come from two small seamless noise textures generated once at load (`NoiseTextures`, about 40 ms), never per-pixel noise. Spray is stippled ovals computed in the shader for now; real spray particles come in step 6. Sprites only exist as small particle textures.
+- **Using it from gameplay:** `crest_height_at(d)`, `base_y_at(d)`, `surface_y(d, u)` (u is 0 at the base to 1 at the crest), `face_angle(u)`, `zone_at(d)`, `barrel()`, `peel_speed()`. The peel point's place on screen is `WaveLayer.peel_x`; the surfer's place across the layout plus `d` gives it (`peel_x = surfer_x + d`). The scene's `world.gd` owns both.
+- **Tuning:** `WaveModel` constants (`MIN_HEIGHT`, `SHOULDER_MIN`, `COLLAPSE_LENGTH`, and so on) set the wave's character; `size` and `hollowness` are the two dials.
 
 ## Tech
 
@@ -116,6 +118,9 @@ Shortcuts that wrap the commands below: `tools\test.ps1`, `tools\build.ps1`, `to
 `godot` is on PATH only in a new shell. If it is missing, use `%LOCALAPPDATA%\Microsoft\WinGet\Links\godot_console.exe`. Use `godot_console`, not `godot`, for command-line runs. The GUI build swallows stdout on Windows.
 
 ```powershell
+# a true-colour screenshot (see Gotchas: the browser pane distorts colour), plus the average frame time
+.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 0.35 -Mood sunset
+
 # tests and parse check (must pass before saying anything works)
 godot_console --headless --path game --script res://tests/run_tests.gd
 
@@ -162,6 +167,6 @@ Export templates must match the editor version exactly (4.7.2.stable), in `%APPD
 - The scene is fill-rate bound. Measured on an Intel Arc 140V laptop GPU with vsync off: 417 fps at 1280x720, 172 at 1920x1080, about 89 at 2560x1440, so roughly 3 ms per megapixel (`godot_console --path game --rendering-driver opengl3 --disable-vsync --print-fps --resolution 1280x720 --quit-after 600`). A phone at 3x density would draw about 3.6 megapixels, so `web/shell.html` caps `devicePixelRatio` at 1.5 (`?dpr=` overrides it). Budget new full-screen layers against this.
 - The browser pane throttles `requestAnimationFrame` to about 30 fps, or stalls it, whenever it is hidden, so in-pane frame rates are only valid while the pane is visible. Prefer the desktop `--print-fps` run above for performance numbers.
 - `--script` test mode does not register autoloads as global names; reach their code through `preload("res://scripts/palette.gd")`.
-- Do not judge colours from browser-pane screenshots. The display is wide-gamut and the capture is colour-managed, so everything looks slightly desaturated (a plain CSS `#E8559A` swatch captures as `#CF6299`). Godot's canvas matched CSS in a side-by-side check, so trust the values in `Palette` and judge shape, contrast and mood from screenshots.
+- Do not judge colours from browser-pane screenshots. The display is wide-gamut and the capture is colour-managed, so everything looks washed out (a plain CSS `#E8559A` swatch captures as `#CF6299`). Use `tools\capture.ps1`, which runs the game in a real window and saves the true pixels, and compare that with the key frames. It is also much faster than exporting: it runs straight from the project.
 - The Compatibility renderer (WebGL2) supports fewer features than Forward+. Test every shader and effect in the web build, not just the editor.
 - The old `.firebaserc` project is `chabruh-surf`. `firebase.json` must serve `build/web`, never the repo root (that would publish the source and the reference photos).

@@ -21,8 +21,8 @@ uniform vec4 sea_horizon : source_color;
 uniform vec4 sea_deep : source_color;
 uniform vec4 sun_glint : source_color;
 
-const float SUN_RADIUS = 0.115;
-const float STRIPE_COUNT = 4.5;
+const float SUN_RADIUS = 0.28;       // a huge, low sun, as in the key frames
+const float STRIPE_COUNT = 8.0;
 
 float hash11(float n) {
 	return fract(sin(n * 127.1) * 43758.5453);

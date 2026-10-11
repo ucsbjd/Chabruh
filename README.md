@@ -24,8 +24,15 @@ Run these from the repo root in PowerShell.
 | Play it at http://localhost:8060 | `.\tools\serve.ps1` |
 | Deploy a temporary preview link | `.\tools\preview.ps1 -Step 1` |
 | Open the editor | `godot --path game --editor` |
+| Save a true-colour screenshot | `.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 0.35 -Mood sunset` |
 
-## Look controls (temporary, until steering arrives in step 4)
+## Wave controls (temporary, until steering arrives in step 5)
+
+- **Sliders** for size, hollow and peel: add **`?debug`** to the URL or press **D**. They work with a finger. *Size* is how big the wave is, *hollow* goes from a spilling wave to a barrel, and *peel* slides the surfer along the wave (left of centre is ahead of the break, right of centre lets the break catch up and puts them under the lip).
+- **Arrow keys**: up and down change the size, left and right slide the surfer along the wave. **`[` and `]`** change hollowness. **R** resets.
+- **`?size=0.8&hollow=1&peel=0.1`** on the URL start the wave in that state (each from 0 to 1, peel from -1.2 to 2.5).
+
+## Look controls (temporary)
 
 - **M**, or a click or tap anywhere: cycle the mood (golden hour, sunset, neon dusk). It cross-fades over 1.5 seconds.
 - **`?mood=golden`**, **`?mood=sunset`** or **`?mood=neon`** on the URL: start in that mood.

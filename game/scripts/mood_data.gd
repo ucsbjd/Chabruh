@@ -28,6 +28,8 @@ extends Resource
 @export var wave_mid := Color.BLACK
 @export var wave_light := Color.BLACK
 @export var wave_glint := Color.BLACK
+## Thin warm line along the crest.
+@export var wave_rim := Color.BLACK
 @export var hollow_dark := Color.BLACK
 @export var hollow_glow := Color.BLACK
 @export var foam_lit := Color.BLACK
@@ -47,6 +49,7 @@ extends Resource
 @export var vignette := Color.BLACK
 @export var vignette_strength := 0.0
 @export var grain_strength := 0.0
+@export var scanline_strength := 0.0
 
 static var _names := PackedStringArray()
 

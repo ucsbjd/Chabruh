@@ -55,11 +55,13 @@ Look-and-feel is **flat-shaded vector style, not pixel art**. A pixel-crunch/dit
 - `licensed-image.jpg`: glassy turquoise barrel at golden hour with light glowing through the lip. A tiny surfer inside the tube.
 - `licensed-image (1).jpg`: Teahupoo-style barrel, surfer crouched low in the pocket, trailing a hand on the wall.
 
+The surfer is seen mostly from behind and slightly from the side. Several storyboard photos show the front, so mirror the idea of each pose (arm shapes, crouch depth, board angle), not the camera angle.
+
 Poses the surfer needs: walk-in with board, prone paddle, pop-up, trim stance, bottom turn crouch, top turn snap (with arms), cutback, deep barrel crouch with hand-drag, air (board vertical, arms up), floater, soft wipeout tumble.
 
 ## Game concept
 
-- Side view. The surfer rides **left to right** across a long peeling wave. The lip pours behind (left) and the open shoulder is ahead (right). The camera follows.
+- Side view, as if shot from the beach. The default surfer rides **right to left** across a long peeling wave, **regular stance (left foot forward), frontside**: back to the camera, chest toward the wave face. The curl, lip and barrel are behind the surfer (right of them) and the open shoulder is ahead (left). The camera follows, so the scenery slides left to right. The world is authored for this default; a mirrored goofy-foot option can come later.
 - Two axes the player controls: **position along the wave** (ahead of or behind the curl) and **height on the face** (low for bottom turns, high for top turns and snaps). Speed comes from the slope and from pumping up and down the face.
 - Too far ahead: the wave shoulders out and you slow down. Too far behind: the lip lands on you (soft wipeout).
 - Spray scales with speed times how sharply you turn. Top-of-the-wave snaps throw the big fan. Air and hang-time matter. The tube is the calm, glowing reward.
@@ -88,7 +90,7 @@ firebase.json  .firebaserc  .github/workflows/
 
 ## Commands (Windows, PowerShell)
 
-Shortcuts that wrap the commands below: `tools\test.ps1`, `tools\build.ps1`, `tools\serve.ps1` (port 8060), `tools\preview.ps1 -Step N`. The browser pane can serve the build with `preview_start` using the `web` entry in `.claude/launch.json`. Shader compile errors may not show up in headless runs (they use a dummy renderer), so always check the browser console too.
+Shortcuts that wrap the commands below: `tools\test.ps1`, `tools\build.ps1`, `tools\serve.ps1` (port 8060), `tools\preview.ps1 -Step N`. The browser pane can serve the build with `preview_start` using the `web` entry in `.claude/launch.json`. Headless runs print shader and script errors but still exit 0, so `tools\test.ps1` and CI scan the output for them. GPU-specific problems only show in the browser console, so check that too.
 
 `godot` is on PATH only in a new shell. If it is missing, use `%LOCALAPPDATA%\Microsoft\WinGet\Links\godot_console.exe`. Use `godot_console`, not `godot`, for command-line runs. The GUI build swallows stdout on Windows.
 
@@ -125,7 +127,8 @@ Export templates must match the editor version exactly (4.7.2.stable), in `%APPD
 - Typed GDScript (`var speed: float`), `snake_case` files and functions, `PascalCase` classes.
 - One script per scene or node. Small functions. Comments explain *why*, never *what*.
 - Anything that affects feel is a named constant or `@export` var, and the feel dials live in one tuning resource. No magic numbers.
-- Colours come from the `Palette` autoload, never as scattered hex literals.
+- Colours come from the `Palette` autoload, never as scattered hex literals. The look is a set of **moods** (`MoodData` resources defined in `palette.gd`: golden, sunset, neon) that cross-fade. A shader uniform with the same name as a `MoodData` property is fed automatically by `world.gd`. To add a colour: add the property to `MoodData`, give it a value in every mood, and declare a uniform of that name.
+- Scene layout: everything is in height units (1.0 is the screen height, x runs 0 to the aspect ratio), so shapes keep their proportions on any screen.
 - Keep per-frame work cheap (target 60 fps on a mid-range phone). Prefer shaders and `CPUParticles2D` over per-frame node churn.
 - Size budget: the engine's `index.wasm` is about 38 MB raw (measured on 4.7.2), so judge by *transferred* size, not file size. Keep everything a player downloads under about 25 MB over the wire, and keep our own `index.pck` small (under about 10 MB). Measure with `curl -H "Accept-Encoding: br,gzip" -sI <url>` or the browser network panel.
 - Free anything you instantiate in headless tests (`queue_free()` / `free()`), or Godot prints leak warnings at exit.

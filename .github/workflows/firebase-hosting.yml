@@ -27,6 +27,11 @@ jobs:
         run: godot --headless --path game --import
       - name: Run tests
         run: godot --headless --path game --script res://tests/run_tests.gd
+      # Godot prints shader and script errors but still exits 0, so scan the output for them.
+      - name: Run the main scene and fail on engine errors
+        run: |
+          godot --headless --path game --quit-after 120 2>&1 | tee run.log
+          if grep -E "SHADER ERROR|SCRIPT ERROR|Parse Error|^ERROR:" run.log; then exit 1; fi
       - name: Export web build
         run: |
           mkdir -p build/web

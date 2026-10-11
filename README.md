@@ -25,6 +25,12 @@ Run these from the repo root in PowerShell.
 | Deploy a temporary preview link | `.\tools\preview.ps1 -Step 1` |
 | Open the editor | `godot --path game --editor` |
 
+## Look controls (temporary, until steering arrives in step 4)
+
+- **M**, or a click or tap anywhere: cycle the mood (golden hour, sunset, neon dusk). It cross-fades over 1.5 seconds.
+- **`?mood=golden`**, **`?mood=sunset`** or **`?mood=neon`** on the URL: start in that mood.
+- **`?fps`** on the URL, or the backtick key: show the frame rate.
+
 ## How it ships
 
 - `firebase.json` serves only `build/web`. Source, docs and reference photos are never published.

@@ -1,6 +1,129 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=14 format=3]
 
-[ext_resource type="Script" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
+[ext_resource type="Script" path="res://scripts/ridge_layer.gd" id="2_ridge"]
+[ext_resource type="Script" path="res://scripts/debug_fps.gd" id="3_fps"]
+[ext_resource type="Shader" path="res://shaders/sky.gdshader" id="4_sky"]
+[ext_resource type="Shader" path="res://shaders/wave.gdshader" id="5_wave"]
+[ext_resource type="Shader" path="res://shaders/swell.gdshader" id="6_swell"]
+[ext_resource type="Shader" path="res://shaders/glow.gdshader" id="7_glow"]
+[ext_resource type="Shader" path="res://shaders/grade.gdshader" id="8_grade"]
+[ext_resource type="Shader" path="res://shaders/grain.gdshader" id="9_grain"]
 
-[node name="Main" type="Node2D"]
-script = ExtResource("1")
+[sub_resource type="ShaderMaterial" id="mat_sky"]
+shader = ExtResource("4_sky")
+
+[sub_resource type="ShaderMaterial" id="mat_wave"]
+shader = ExtResource("5_wave")
+
+[sub_resource type="ShaderMaterial" id="mat_swell"]
+shader = ExtResource("6_swell")
+
+[sub_resource type="ShaderMaterial" id="mat_glow"]
+shader = ExtResource("7_glow")
+
+[sub_resource type="ShaderMaterial" id="mat_grade"]
+shader = ExtResource("8_grade")
+
+[sub_resource type="ShaderMaterial" id="mat_grain"]
+shader = ExtResource("9_grain")
+
+[node name="World" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_world")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+material = SubResource("mat_sky")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="FarRidge" type="Node2D" parent="."]
+script = ExtResource("2_ridge")
+parallax = 0.03
+ridge_height = 0.07
+ridge_seed = 1.7
+ridge_role = &"ridge_far"
+haze_amount = 0.55
+
+[node name="MidRidge" type="Node2D" parent="."]
+script = ExtResource("2_ridge")
+parallax = 0.07
+ridge_height = 0.055
+ridge_seed = 4.2
+ridge_role = &"ridge_mid"
+haze_amount = 0.25
+palm_clusters = 3
+palm_height = 0.17
+
+[node name="Wave" type="ColorRect" parent="."]
+material = SubResource("mat_wave")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Swell" type="ColorRect" parent="."]
+material = SubResource("mat_swell")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Glow" type="ColorRect" parent="."]
+material = SubResource("mat_glow")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Grade" type="ColorRect" parent="."]
+material = SubResource("mat_grade")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Grain" type="ColorRect" parent="."]
+material = SubResource("mat_grain")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Fps" type="Label" parent="."]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 8.0
+offset_right = 134.0
+offset_bottom = 38.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 20
+text = "fps"
+script = ExtResource("3_fps")

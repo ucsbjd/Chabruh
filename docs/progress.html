@@ -246,7 +246,7 @@ const STEPS = [
     ]
   },
   {
-    n: 3, status: "todo",
+    n: 3, status: "done",
     title: "The living wave: model and look",
     goal: "A big, believable wave that can change size and shape, drawn from a small physics-informed model that the surfer will later ride on.",
     build: [
@@ -310,12 +310,14 @@ const STEPS = [
       "Smaller carve spray on every turn, a foam wake behind the board, tail mist, and a lip spit near the curl.",
       "Air: spray on take-off, a hang-time moment, a splash on landing.",
       "Droplet sparkle catching the sun, with layers in front of and behind the surfer for depth.",
+      "The wave itself breaks: in step 3 only the sea moves and the wave's shape is fixed, so here the lip visibly throws and falls, foam churns and drips down the face, the whitewater boils behind the peel point, and the crest ripples. Animate it in the shader, or by rebuilding the mesh only a few times a second (a rebuild costs about 15 ms).",
       "CPUParticles2D and/or procedurally drawn fans, kept cheap enough for mobile."
     ],
     notNow: ["Sound, the tube."],
     verify: [
       "A hard snap at the top produces a fan that echoes images (4), (5), (6) and (9). A gentle carve stays subtle.",
       "A still screenshot shows the fan shape, not random dots.",
+      "The wave looks like it is breaking, not like a still shape: the lip falls, foam churns, the whitewater moves.",
       "No frame drops on my phone, and Claude reports the particle counts."
     ]
   },

@@ -1,3 +1,15 @@
-dist/
+# Godot
+game/.godot/
+game/*.translation
+.mono/
+
+# Export output (Firebase serves this; CI rebuilds it)
+build/
+
+# Local-only reference photos (copyrighted, never publish)
+storyboardimages/
+
+# Tooling
+.firebase/
 node_modules/
-.DS_Store
+.claude/settings.local.json

@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chabruh Build Tracker</title>
+<style>
+  :root {
+    --bg: #150d2e;
+    --surface: #211447;
+    --surface-2: #2c1c5c;
+    --text: #fbefe2;
+    --muted: #b9a8d6;
+    --line: #43307e;
+    --pink: #ff4fa0;
+    --peach: #ffa56b;
+    --gold: #ffd79a;
+    --teal: #19c9c0;
+    --on-color: #1b1730;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #fff6ec;
+      --surface: #ffffff;
+      --surface-2: #fdeee0;
+      --text: #2a1850;
+      --muted: #6a5790;
+      --line: #ecd6c4;
+      --pink: #d02a7a;
+      --peach: #e0723a;
+      --gold: #b8741a;
+      --teal: #0b7c8c;
+      --on-color: #ffffff;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fff6ec; --surface: #ffffff; --surface-2: #fdeee0; --text: #2a1850; --muted: #6a5790;
+    --line: #ecd6c4; --pink: #d02a7a; --peach: #e0723a; --gold: #b8741a; --teal: #0b7c8c; --on-color: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
+
+  /* Header: sunset sky with a striped sun */
+  header.hero {
+    position: relative;
+    overflow: hidden;
+    padding: 40px 16px 28px;
+    background: linear-gradient(180deg, #2b1b5e 0%, #7b3fa0 40%, #e8559a 72%, #ff9a6b 100%);
+    color: #fff8ee;
+  }
+  .hero .inner { max-width: 880px; margin: 0 auto; position: relative; z-index: 1; }
+  .sun {
+    position: absolute; right: 6%; bottom: -70px; width: 220px; height: 220px; border-radius: 50%;
+    background: linear-gradient(180deg, #ffe3a3 20%, #ff7a8a 100%);
+    -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 18px);
+            mask-image: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 18px);
+    opacity: .9;
+  }
+  h1.title {
+    margin: 0; font-size: clamp(2.2rem, 7vw, 3.6rem); font-weight: 900; font-style: italic;
+    letter-spacing: .06em; text-transform: uppercase; line-height: 1;
+    text-shadow: 3px 3px 0 #ff4fa0, 6px 6px 0 #19c9c0;
+  }
+  .sub { margin: 14px 0 20px; max-width: 34em; opacity: .95; }
+  .meter { display: flex; gap: 6px; max-width: 460px; }
+  .meter span { flex: 1; height: 10px; border-radius: 6px; background: rgba(21, 13, 46, .45); }
+  .meter span.on { background: #c6f135; }
+  .meter-label { margin-top: 8px; font-weight: 600; }
+
+  h2 { margin: 40px 0 12px; font-size: 1.25rem; letter-spacing: .02em; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+
+  .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .card b { color: var(--pink); }
+
+  /* Steps */
+  details.step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin: 14px 0; overflow: hidden; }
+  details.step.next { border-color: var(--peach); box-shadow: 0 0 0 1px var(--peach); }
+  details.step > summary { list-style: none; cursor: pointer; display: flex; gap: 14px; align-items: center; padding: 16px; }
+  details.step > summary::-webkit-details-marker { display: none; }
+  .num { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--surface-2); border: 2px solid var(--line); }
+  .step.done .num { background: var(--teal); border-color: var(--teal); color: var(--on-color); }
+  .step.next .num { background: var(--peach); border-color: var(--peach); color: var(--on-color); }
+  .head { flex: 1; min-width: 0; }
+  .head strong { display: block; font-size: 1.08rem; }
+  .head small { color: var(--muted); }
+  .chip { flex: none; font-size: .75rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .done .chip { background: var(--teal); border-color: var(--teal); color: var(--on-color); }
+  .next .chip { background: var(--peach); border-color: var(--peach); color: var(--on-color); }
+  .body { padding: 0 16px 18px; border-top: 1px solid var(--line); }
+  .body h3 { margin: 18px 0 6px; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .body ul { margin: 0; padding-left: 20px; }
+  .body li { margin: 3px 0; }
+  .checks { list-style: none; padding: 0; }
+  .checks label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .checks input { margin-top: 5px; accent-color: var(--teal); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  button.copy {
+    font: inherit; font-weight: 700; cursor: pointer; padding: 10px 16px; border-radius: 10px;
+    border: 2px solid var(--pink); background: var(--pink); color: var(--on-color);
+  }
+  button.copy.alt { background: transparent; color: var(--text); border-color: var(--line); }
+  button.copy.go { background: var(--teal); border-color: var(--teal); }
+  button.copy:hover { filter: brightness(1.08); }
+  button.copy:focus-visible, summary:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  details.prompt { margin-top: 14px; }
+  details.prompt summary { cursor: pointer; color: var(--muted); }
+  pre { margin: 8px 0 0; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap; word-break: break-word; font: .85rem/1.5 ui-monospace, Consolas, monospace; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; width: 28%; }
+
+  .gallery { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .gallery figure { margin: 0; }
+  .gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+  .gallery figcaption { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+
+  footer { margin-top: 40px; color: var(--muted); font-size: .9rem; }
+  code { font: .9em ui-monospace, Consolas, monospace; background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="sun" aria-hidden="true"></div>
+  <div class="inner">
+    <h1 class="title">Chabruh</h1>
+    <p class="sub">Build tracker for the 2D surf game. Slow, sunny, no bad guys. Eight steps, each one checked before the next begins.</p>
+    <div class="meter" id="meter" role="img" aria-label="Progress"></div>
+    <div class="meter-label" id="meterLabel"></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h2>How to use this page</h2>
+  <div class="cards">
+    <div class="card"><b>1. Start.</b> Open a fresh Claude context in the project folder and paste a step's <em>Start prompt</em>. Claude posts a short plan first. Say OK.</div>
+    <div class="card"><b>2. Verify.</b> Claude gives you a preview link. Work through the checklist on desktop and phone. Ticks are saved in this browser.</div>
+    <div class="card"><b>3. Close it out.</b> Happy? Paste <em>Done</em>. Not quite? Paste <em>Tweak</em> and say what you saw. Claude updates the status of the step in this file.</div>
+  </div>
+
+  <h2>Step 0: Tools and repo <span class="muted">(done)</span></h2>
+  <article class="card">
+    <table>
+      <tr><th>Engine</th><td>Godot 4.7.2 stable (winget <code>GodotEngine.GodotEngine</code>) plus the matching 4.7.2 export templates.</td></tr>
+      <tr><th>Already here</th><td>Git, GitHub CLI (signed in as ucsbjd), Node, npm, Firebase CLI (signed in), Python.</td></tr>
+      <tr><th>Repo</th><td>Connected to <code>ucsbjd/Chabruh</code>. The old 3D prototype is kept at tag <code>legacy-3d</code> and is not in the working folder.</td></tr>
+      <tr><th>Hosting</th><td>Firebase project <code>chabruh-surf</code> at <a href="https://chabruh-surf.web.app" style="color:var(--teal)">chabruh-surf.web.app</a>. The <code>FIREBASE_SERVICE_ACCOUNT</code> secret is set, and its first deploy has run.</td></tr>
+      <tr><th>Project files</th><td><code>CLAUDE.md</code> (rules, art direction, commands), this tracker, <code>.gitignore</code>. Nothing is committed or pushed yet.</td></tr>
+      <tr><th>Toolchain check</th><td>Passed. A throwaway Godot 4.7.2 project (kept outside the repo) ran a headless test script, exported to the web, loaded in the browser pane, and animated with no console errors. The engine <code>.wasm</code> is 38 MB raw, so step 1 measures the compressed size on Firebase.</td></tr>
+    </table>
+  </article>
+
+  <h2>The plan</h2>
+  <div id="steps"></div>
+
+  <h2>Why these choices</h2>
+  <div class="card">
+    <table>
+      <tr><th>Godot 4.7</th><td>One project exports to web now and Android later. Built-in 2D shaders and particles, text-based scenes Claude can edit, and a command line that can test and export headlessly.</td></tr>
+      <tr><th>Flat-shaded 2D, not pixel art</th><td>Over the Hill is soft, flat-shaded shapes in warm hazy light, not pixels. Our version is vector-style layers with purple shadows and an 80s sunset palette. <strong>Tell me early if you would rather have pixel art.</strong> It changes steps 2, 3 and 5.</td></tr>
+      <tr><th>Procedural art first</th><td>Everything is drawn with code and shaders, so Claude can build and tune it without art tools. Hand-made sprites can replace pieces later.</td></tr>
+      <tr><th>No fail state</th><td>A wipeout is a soft tumble and a paddle back. There is no score, timer, or game over, in line with the vibe.</td></tr>
+      <tr><th>Preview, then live</th><td>Each step is deployed to a temporary Firebase preview link for checking on your phone. It only goes to the live site when you say Done.</td></tr>
+    </table>
+  </div>
+
+  <h2>After step 8: design iteration</h2>
+  <div class="card">
+    <ul>
+      <li>Sharpen the look: more palette moods, a pixel or dither toggle, hand-drawn sprites swapped in for procedural ones.</li>
+      <li>More breaks and boards, new wave shapes, costumes.</li>
+      <li>A photo mode (the Over the Hill style of taking a quiet moment).</li>
+      <li>Android build.</li>
+    </ul>
+  </div>
+
+  <h2>Reference images</h2>
+  <p class="muted">These live in the local-only <code>storyboardimages</code> folder. They are never committed or deployed.</p>
+  <div class="gallery" id="gallery"></div>
+
+  <footer>
+    The <code>STEPS</code> list in this file is the plan and the source of truth for progress. Edit it, or ask Claude to. Commands and conventions are in <code>CLAUDE.md</code>.
+  </footer>
+</main>
+
+<script>
+// The plan. Claude changes a step's status to "done" when you paste its Done prompt.
+const STEPS = [
+  {
+    n: 1, status: "todo",
+    title: "Scaffold and ship",
+    goal: "An empty-but-alive Godot 2D project that builds for the web and deploys to chabruh-surf.web.app, so every later step can be seen on a phone.",
+    build: [
+      "Create the Godot 4.7 project in game/: Compatibility renderer, 1280x720 base size, landscape, stretch mode canvas_items with aspect expand, GDScript only.",
+      "Main scene with a placeholder sunset gradient and a gently moving sea line, just to prove rendering and animation work.",
+      "Autoload Palette (the colours in CLAUDE.md) and a Tuning resource for the feel dials.",
+      "tests/run_tests.gd: a headless smoke test (project loads, main scene instantiates, palette exists) that exits non-zero on failure.",
+      "Web export preset 'Web' (single-threaded) with a small HTML shell that locks the page: no scroll, no bounce, touch-action none. Output to build/web/index.html.",
+      "tools/ PowerShell scripts for test, build, serve and preview, plus .claude/launch.json so the browser pane can serve build/web.",
+      "Firebase: firebase.json serves only build/web. Replace the old workflow with one that installs Godot 4.7.2 and its templates, exports, and deploys live on push to main (skipping cleanly if the secret is missing).",
+      "Remove the old 3D prototype files from the working tree (tag legacy-3d keeps them; push that tag). Write README.md. Commit the files already in the folder (CLAUDE.md, docs/progress.html, .gitignore)."
+    ],
+    notNow: ["Any real art, the wave, the surfer, input, or sound."],
+    verify: [
+      "Claude shows the headless test output and it passes.",
+      "The local build opens at localhost:8060 with a moving placeholder and no console errors.",
+      "The preview link loads on my phone in landscape, and dragging does not scroll or bounce the page.",
+      "firebase.json serves only build/web, so source and reference photos are not reachable on the site.",
+      "Claude reports the compressed (over-the-wire) size of the .wasm and .pck as served by Firebase.",
+      "After I say Done: the GitHub Action goes green and the live URL shows the new placeholder instead of the old 3D game."
+    ]
+  },
+  {
+    n: 2, status: "todo",
+    title: "The look: sky, sea and wave",
+    goal: "The world looks like Over the Hill meets an 80s sunset, in 2D, before anyone surfs on it.",
+    build: [
+      "Parallax layers: gradient sky with a striped sun, haze bands, palm and headland silhouettes that fade into the sky colour with distance.",
+      "A large wave face drawn flat-shaded with a shader: bands from deep violet-blue shadow to turquoise to bright light-through-the-lip, a curling lip, a foam line, slow ripples flowing up the face.",
+      "Open-water swell in the foreground, and a camera drift that scrolls the whole scene so it feels like travelling along the wave.",
+      "Finishing: sun glow, warm-to-violet colour grading, light film grain. All of it must work in the Compatibility renderer and the web build.",
+      "A key press to switch between golden hour, sunset and neon dusk palettes (parameters only).",
+      "All colours come from the Palette autoload."
+    ],
+    notNow: ["The surfer, input, spray, sound."],
+    verify: [
+      "Next to images.jpg and the Over the Hill screenshots: warm light, violet shadows, hazy depth, no outlines.",
+      "The wave face reads as a wave (curl, lip, foam), not a blue rectangle.",
+      "Smooth 60 fps on my phone and no shader errors in the console.",
+      "Switching the palette changes the mood and breaks nothing."
+    ]
+  },
+  {
+    n: 3, status: "todo",
+    title: "The surfer and pose library",
+    goal: "A flat-shaded 80s surfer who can hit the athletic poses from the storyboard and blend smoothly between them.",
+    build: [
+      "A paper-doll rig made of Polygon2D / Node2D parts (torso, head and hair, two arms, two legs, board) in a neon colour-blocked wetsuit with a bold 80s board graphic. Flat shading with a violet shadow side.",
+      "A pose library stored as data (angles and offsets per joint): walk-in with board, prone paddle, pop-up, trim, bottom-turn crouch, top-turn snap with arms out, cutback, deep barrel crouch with hand-drag, air (board vertical, arms up), floater, soft wipeout tumble.",
+      "Smooth blending between poses (about 0.15 s), the board tilting with the pose, and a small idle sway.",
+      "A pose gallery scene reachable with ?gallery on the URL, showing every pose in a grid plus a cycler."
+    ],
+    notNow: ["Riding the wave, controls, spray."],
+    verify: [
+      "The gallery next to the storyboard photos: each pose reads as the right athletic move at a glance, silhouette first.",
+      "Blending between any two poses is smooth, with no limb popping or detaching.",
+      "The surfer looks good against the step 2 wave (contrast, shadow colour)."
+    ]
+  },
+  {
+    n: 4, status: "todo",
+    title: "Riding and feel",
+    goal: "Catch a wave and ride it. It should feel good in the hand before any effects are added.",
+    build: [
+      "Surfer states: paddle, automatic pop-up, ride, soft wipeout, drift back. The pose follows the motion (low and turning up is a bottom turn, high and turning down is a top turn, flat and fast is trim).",
+      "Motion model: position along the wave and height on the face, speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
+      "Input: mouse X plus the wheel on desktop, arrow keys / WASD as a fallback, two-finger drag on mobile (horizontal steers, vertical changes height). The wheel and touch must never scroll or zoom the page.",
+      "A camera that follows the surfer smoothly.",
+      "A tuning resource with Feel (dead zone, response curve) and Reach dials, and a small hidden tuning panel (backtick key or triple-tap)."
+    ],
+    notNow: ["Spray, sound, sets of waves."],
+    verify: [
+      "Mouse X plus wheel on desktop, and two-finger drag on my phone, both feel smooth, and nothing scrolls or zooms.",
+      "I can chain a bottom turn into a top turn and the pose follows.",
+      "Drifting too far back gives a gentle wipeout and I am paddling again within a few seconds. No text or score appears.",
+      "Frame rate holds on my phone."
+    ]
+  },
+  {
+    n: 5, status: "todo",
+    title: "Spray and water effects",
+    goal: "The signature of the game: big, dynamic spray like the storyboard photos.",
+    build: [
+      "Top-turn spray fan: a wide radial arc thrown off the tail, much bigger than the surfer, with fine droplets at the edge, sunlit white and peach on the lit side and violet in shade. Size scales with speed times how sharp the turn is.",
+      "Smaller carve spray on every turn, a foam wake behind the board, tail mist, and a lip spit near the curl.",
+      "Air: spray on take-off, a hang-time moment, a splash on landing.",
+      "Droplet sparkle catching the sun, with layers in front of and behind the surfer for depth.",
+      "CPUParticles2D and/or procedurally drawn fans, kept cheap enough for mobile."
+    ],
+    notNow: ["Sound, the tube."],
+    verify: [
+      "A hard snap at the top produces a fan that echoes images (4), (5), (6) and (9). A gentle carve stays subtle.",
+      "A still screenshot shows the fan shape, not random dots.",
+      "No frame drops on my phone, and Claude reports the particle counts."
+    ]
+  },
+  {
+    n: 6, status: "todo",
+    title: "Wave cycle: lineup, set, barrel",
+    goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
+    build: [
+      "Lineup intro: calm water, walk or paddle out, a lull with idle floating, then a set approaches (swell lines on the horizon).",
+      "Wave life along the ride: swell, shoulder, barrel section, closeout. The lip throws out and a tube opens around the surfer.",
+      "Tube moment: gentler camera framing or zoom, light glowing through the lip, the deep crouch with hand-drag pose, hushed.",
+      "End of ride (the wave closes out or you kick out): drift back to the lineup, next set after a lull. No score, no stats.",
+      "Lulls and sets vary a little but always feel calm."
+    ],
+    notNow: ["Music, polish."],
+    verify: [
+      "I can loop lineup, ride, tube, kick out, lineup several times without anything breaking.",
+      "The tube looks like licensed-image.jpg (glow through the lip) and feels like a reward.",
+      "Lulls feel relaxed rather than empty, and nothing nags me."
+    ]
+  },
+  {
+    n: 7, status: "todo",
+    title: "Sound and atmosphere",
+    goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
+    build: [
+      "Ambient ocean (swell, whitewater, wind), spray hiss tied to spray size, a muffled tube whoosh. Generated or synthesised, so no asset packs and no licensing worries.",
+      "Original synth-wave music in layers (pad, bass, arpeggio): only the calm pad in the lineup, more layers fading in as the ride flows.",
+      "Slow time-of-day drift over a session (golden hour, sunset, neon dusk) driving the whole world through the Palette.",
+      "Audio starts after the first tap, with a mute button. Volumes low and warm.",
+      "Keep the total download over the wire under about 25 MB."
+    ],
+    notNow: ["New gameplay."],
+    verify: [
+      "With sound on, the lineup is calm and a ride has swelling energy. No clicks, pops or grating loops.",
+      "Mute works and is remembered. The first tap starts audio with no console error.",
+      "Each stage of the time-of-day drift looks good, and the download size is within budget (Claude reports it)."
+    ]
+  },
+  {
+    n: 8, status: "todo",
+    title: "Mobile polish and ship v0.1",
+    goal: "Something I can send to a friend's phone.",
+    build: [
+      "An 80s-styled title screen, a first-run hint for the two-finger gesture, guidance if the phone is held upright, and a loading bar.",
+      "A pause menu: resume, mute, the feel dials, and re-setting my fingers.",
+      "A performance pass: 60 fps on a mid-range phone, load time, export size, and a low-quality toggle if needed.",
+      "Favicon, social share card and web manifest (installable).",
+      "Safe areas, resize and orientation handling, and sensible Escape / back behaviour.",
+      "README, the final CI deploy, and the git tag v0.1."
+    ],
+    notNow: ["New features. This step is polish only. Design iteration comes after."],
+    verify: [
+      "On a fresh phone or private tab I can go from the live URL to riding without help.",
+      "Rotating the phone, switching tabs and coming back do not break audio or input.",
+      "Load time and frame rate are acceptable (Claude reports numbers).",
+      "Nothing on the live site reveals source files or reference photos."
+    ]
+  }
+];
+
+const REFERENCES = [
+  ["images (1).jpg", "80s gear, walk-in"],
+  ["images (2).jpg", "Carving turn"],
+  ["images (3).jpg", "Barrel crouch"],
+  ["images (4).jpg", "Snap, big spray"],
+  ["images (5).jpg", "Snap, burst"],
+  ["images (6).jpg", "Spray fan"],
+  ["images (7).jpg", "Air"],
+  ["images (8).jpg", "Air, arms up"],
+  ["images (9).jpg", "Top turn"],
+  ["images.jpg", "Palette mood"],
+  ["licensed-image.jpg", "Glassy barrel"],
+  ["licensed-image (1).jpg", "Tube, hand-drag"]
+];
+
+// ---- Prompt builders -------------------------------------------------------
+
+const bullets = (items) => items.map((i) => "- " + i).join("\n");
+
+function startPrompt(s) {
+  return [
+    `We're on STEP ${s.n} of ${STEPS.length} for Chabruh: "${s.title}".`,
+    "",
+    "First read CLAUDE.md (vibe rules, art direction, commands, the step loop) and the STEPS list in docs/progress.html so you know what is already done. Then look at the code that exists.",
+    "",
+    "GOAL",
+    s.goal,
+    "",
+    "BUILD",
+    bullets(s.build),
+    "",
+    "NOT IN THIS STEP",
+    bullets(s.notNow),
+    "",
+    "HOW I'LL CHECK IT (make each of these true, and tell me which ones you actually tested)",
+    bullets(s.verify),
+    "",
+    `Follow the step loop in CLAUDE.md: post a short plan and wait for my OK before changing any files. When it works, run the tests, export the web build, look at it in the browser pane, deploy the Firebase preview channel step-${s.n}, and give me the URL. Do not mark the step done. I'll tell you when.`
+  ].join("\n");
+}
+
+function donePrompt(s) {
+  const last = s.n === STEPS.length;
+  return [
+    `Done with step ${s.n}: "${s.title}". I've checked it and it's good.`,
+    "",
+    "Wrap up:",
+    "1. Re-run the headless tests and the web export. Stop and tell me if anything fails.",
+    `2. In docs/progress.html set step ${s.n} to status "done". Leave everything else alone.`,
+    "3. Update CLAUDE.md only if a convention or command actually changed in this step.",
+    `4. Commit on branch step-${s.n} with a clear message ("Step ${s.n}: ..."), merge it into main (fast-forward), and push main.${last ? " Then tag v0.1 and push the tag." : ""}`,
+    "5. Check the GitHub Actions run, confirm https://chabruh-surf.web.app is serving the new build, and tell me what you see.",
+    last
+      ? "Then tell me the project is at v0.1 and we can start design iteration."
+      : `Then tell me what step ${s.n + 1} is and stop. I'll start it in a fresh context.`
+  ].join("\n");
+}
+
+function tweakPrompt(s) {
+  return [
+    `Step ${s.n} ("${s.title}") is built, but it needs changes before I'll call it done.`,
+    "",
+    "What I saw and what I want different:",
+    "- (write it here)",
+    "",
+    `Stay inside step ${s.n}'s scope. Post a short plan and wait for my OK, then fix it, re-verify, redeploy the preview channel step-${s.n}, and give me the URL.`
+  ].join("\n");
+}
+
+// ---- Rendering -------------------------------------------------------------
+
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  el.append(...kids);
+  return el;
+}
+
+function store(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch (e) { /* storage can be blocked; the page still works */ }
+  return null;
+}
+
+async function copyText(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const box = h("textarea", { style: "position:fixed;opacity:0" });
+    box.value = text;
+    document.body.append(box);
+    box.select();
+    document.execCommand("copy");
+    box.remove();
+  }
+  const label = button.textContent;
+  button.textContent = "Copied";
+  setTimeout(() => { button.textContent = label; }, 1500);
+}
+
+function copyButton(label, text, cls = "") {
+  const button = h("button", { class: "copy " + cls, type: "button" }, label);
+  button.addEventListener("click", () => copyText(text, button));
+  return button;
+}
+
+function renderStep(s, nextN) {
+  const state = s.status === "done" ? "done" : s.n === nextN ? "next" : "later";
+  const chip = { done: "Done", next: "Next up", later: "Later" }[state];
+  const checks = s.verify.map((text, i) => {
+    const key = `chabruh-verify-${s.n}-${i}`;
+    const box = h("input", { type: "checkbox" });
+    box.checked = store(key) === "1";
+    box.addEventListener("change", () => store(key, box.checked ? "1" : "0"));
+    return h("li", {}, h("label", {}, box, h("span", {}, text)));
+  });
+
+  const el = h("details", { class: `step ${state}` });
+  el.open = state === "next";
+  const summary = h("summary", {},
+    h("span", { class: "num" }, String(s.n)),
+    h("span", { class: "head" }, h("strong", {}, s.title), h("small", {}, s.goal)),
+    h("span", { class: "chip" }, chip)
+  );
+  const body = h("div", { class: "body" },
+    h("h3", {}, "What gets built"), h("ul", {}, ...s.build.map((t) => h("li", {}, t))),
+    h("h3", {}, "Not in this step"), h("ul", {}, ...s.notNow.map((t) => h("li", {}, t))),
+    h("h3", {}, "Verify it"), h("ul", { class: "checks" }, ...checks),
+    h("div", { class: "actions" },
+      copyButton("Copy start prompt", startPrompt(s)),
+      copyButton("Copy done prompt", donePrompt(s), "go"),
+      copyButton("Copy tweak prompt", tweakPrompt(s), "alt")
+    ),
+    h("details", { class: "prompt" }, h("summary", {}, "Preview the start prompt"), h("pre", {}, startPrompt(s)))
+  );
+  el.append(summary, body);
+  return el;
+}
+
+function render() {
+  const next = STEPS.find((s) => s.status !== "done");
+  const nextN = next ? next.n : null;
+  const done = STEPS.filter((s) => s.status === "done").length;
+
+  const meter = document.getElementById("meter");
+  meter.replaceChildren(...STEPS.map((s) => h("span", { class: s.status === "done" ? "on" : "" })));
+  document.getElementById("meterLabel").textContent =
+    `${done} of ${STEPS.length} steps done` + (next ? `. Next up: step ${next.n}, ${next.title}.` : ". All done.");
+
+  document.getElementById("steps").replaceChildren(...STEPS.map((s) => renderStep(s, nextN)));
+
+  document.getElementById("gallery").replaceChildren(...REFERENCES.map(([file, caption]) => {
+    const img = h("img", { src: "../storyboardimages/" + encodeURIComponent(file), alt: caption, loading: "lazy" });
+    img.addEventListener("error", () => img.remove());
+    return h("figure", {}, img, h("figcaption", {}, caption));
+  }));
+}
+
+render();
+</script>
+</body>
+</html>

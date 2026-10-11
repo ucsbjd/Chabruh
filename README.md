@@ -30,6 +30,7 @@ Run these from the repo root in PowerShell.
 - **M**, or a click or tap anywhere: cycle the mood (golden hour, sunset, neon dusk). It cross-fades over 1.5 seconds.
 - **`?mood=golden`**, **`?mood=sunset`** or **`?mood=neon`** on the URL: start in that mood.
 - **`?fps`** on the URL, or the backtick key: show the frame rate.
+- **`?dpr=2`** (sharper) or **`?dpr=1`** (fastest): the page caps its render density at 1.5 by default, because the scene costs about 3 ms per megapixel on a laptop GPU. Use this to compare on a phone.
 
 ## How it ships
 

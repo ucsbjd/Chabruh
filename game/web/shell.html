@@ -116,6 +116,23 @@ body {
 			<div id="status-notice"></div>
 		</div>
 
+		<script>
+// The scene is fill-rate bound (about 3 ms per megapixel on a laptop GPU), and a phone at 3x
+// pixel density draws about 4x the pixels of one at 1.5x. Godot sizes its canvas from
+// devicePixelRatio, so cap what it sees; the browser scales the canvas up smoothly.
+// Override with ?dpr=2 (sharper) or ?dpr=1 (fastest) to compare on a device.
+(function () {
+	const asked = parseFloat(new URLSearchParams(location.search).get('dpr'));
+	const cap = asked > 0 ? asked : 1.5;
+	try {
+		const native = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+		const read = native && native.get ? native.get.bind(window) : () => 1;
+		Object.defineProperty(window, 'devicePixelRatio', { get: () => Math.min(read(), cap), configurable: true });
+	} catch (e) {
+		// If the browser refuses, the game just renders at native density.
+	}
+}());
+		</script>
 		<script src="$GODOT_URL"></script>
 		<script>
 const GODOT_CONFIG = $GODOT_CONFIG;

@@ -138,6 +138,9 @@ Export templates must match the editor version exactly (4.7.2.stable), in `%APPD
 - Browsers block audio until the first user gesture. Start sound after the first tap or click.
 - Godot web needs `touch-action: none` and `overflow: hidden` on the page, or touch drags scroll the page. Use a small custom HTML shell if needed.
 - Name the export `index.html`.
+- The scene is fill-rate bound. Measured on an Intel Arc 140V laptop GPU with vsync off: 417 fps at 1280x720, 172 at 1920x1080, about 89 at 2560x1440, so roughly 3 ms per megapixel (`godot_console --path game --rendering-driver opengl3 --disable-vsync --print-fps --resolution 1280x720 --quit-after 600`). A phone at 3x density would draw about 3.6 megapixels, so `web/shell.html` caps `devicePixelRatio` at 1.5 (`?dpr=` overrides it). Budget new full-screen layers against this.
+- The browser pane throttles `requestAnimationFrame` to about 30 fps, or stalls it, whenever it is hidden, so in-pane frame rates are only valid while the pane is visible. Prefer the desktop `--print-fps` run above for performance numbers.
+- `--script` test mode does not register autoloads as global names; reach their code through `preload("res://scripts/palette.gd")`.
 - Do not judge colours from browser-pane screenshots. The display is wide-gamut and the capture is colour-managed, so everything looks slightly desaturated (a plain CSS `#E8559A` swatch captures as `#CF6299`). Godot's canvas matched CSS in a side-by-side check, so trust the values in `Palette` and judge shape, contrast and mood from screenshots.
 - The Compatibility renderer (WebGL2) supports fewer features than Forward+. Test every shader and effect in the web build, not just the editor.
 - The old `.firebaserc` project is `chabruh-surf`. `firebase.json` must serve `build/web`, never the repo root (that would publish the source and the reference photos).

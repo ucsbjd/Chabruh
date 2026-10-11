@@ -4,6 +4,7 @@ extends Node2D
 ## Built once in height units (1.0 is the screen height) and scaled to the screen by world.gd.
 ## The pattern repeats every PERIOD, so scrolling is a position shift that wraps.
 
+const SILHOUETTE_SHADER := preload("res://shaders/ridge.gdshader")
 const PERIOD := 4.0
 const SAMPLE_STEP := 0.05
 const SPAN_FROM := -1          # periods built to the left of 0
@@ -26,10 +27,15 @@ const FROND_STEPS := 8
 var _horizon := 0.0
 var _ridge := Polygon2D.new()
 var _palms := Polygon2D.new()
-var _base_count := 0
+var _ridge_material := ShaderMaterial.new()
+var _palm_material := ShaderMaterial.new()
 
 
 func _init() -> void:
+	_ridge_material.shader = SILHOUETTE_SHADER
+	_palm_material.shader = SILHOUETTE_SHADER
+	_ridge.material = _ridge_material
+	_palms.material = _palm_material
 	add_child(_ridge)
 	add_child(_palms)
 
@@ -37,6 +43,10 @@ func _init() -> void:
 ## Builds the ridge and palms standing on a horizon at height `horizon_y`. Call once.
 func build(horizon_y: float) -> void:
 	_horizon = horizon_y
+	for material in [_ridge_material, _palm_material]:
+		material.set_shader_parameter("horizon", horizon_y)
+		material.set_shader_parameter("fade_height", ridge_height)
+	_ridge_material.set_shader_parameter("haze_amount", haze_amount)
 	_build_ridge()
 	_build_palms()
 
@@ -49,15 +59,10 @@ func place(travel: float, unit: float, crop: float) -> void:
 
 
 func apply_mood(mood: MoodData) -> void:
-	var top: Color = mood.get(ridge_role)
-	var base := top.lerp(mood.haze, haze_amount)
-	var colors := PackedColorArray()
-	for i in _base_count:
-		colors.append(top)
-	for i in _base_count:
-		colors.append(base)
-	_ridge.vertex_colors = colors
-	_palms.color = mood.palm
+	_ridge_material.set_shader_parameter("ridge_color", mood.get(ridge_role))
+	_ridge_material.set_shader_parameter("haze", mood.haze)
+	_palm_material.set_shader_parameter("ridge_color", mood.palm)
+	_palm_material.set_shader_parameter("haze", mood.haze)
 
 
 func _height_at(x: float) -> float:
@@ -74,9 +79,7 @@ func _build_ridge() -> void:
 		top.append(Vector2(x, _horizon - _height_at(x)))
 		bottom.append(Vector2(x, _horizon + 0.004))
 		x += SAMPLE_STEP
-	_base_count = top.size()
 	bottom.reverse()
-	# apply_mood colours the vertices in this order: every top point, then every bottom point.
 	_ridge.polygon = top + bottom
 
 

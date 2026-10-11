@@ -159,7 +159,7 @@
       <tr><th>Already here</th><td>Git, GitHub CLI (signed in as ucsbjd), Node, npm, Firebase CLI (signed in), Python.</td></tr>
       <tr><th>Repo</th><td>Connected to <code>ucsbjd/Chabruh</code>. The old 3D prototype is kept at tag <code>legacy-3d</code> and is not in the working folder.</td></tr>
       <tr><th>Hosting</th><td>Firebase project <code>chabruh-surf</code> at <a href="https://chabruh-surf.web.app" style="color:var(--teal)">chabruh-surf.web.app</a>. The <code>FIREBASE_SERVICE_ACCOUNT</code> secret is set, and its first deploy has run.</td></tr>
-      <tr><th>Project files</th><td><code>CLAUDE.md</code> (rules, art direction, commands), this tracker, <code>.gitignore</code>. Nothing is committed or pushed yet.</td></tr>
+      <tr><th>Project files</th><td><code>CLAUDE.md</code> (rules, art direction, commands), this tracker, <code>.gitignore</code>, all committed to the repo.</td></tr>
       <tr><th>Toolchain check</th><td>Passed. A throwaway Godot 4.7.2 project (kept outside the repo) ran a headless test script, exported to the web, loaded in the browser pane, and animated with no console errors. The engine <code>.wasm</code> is 38 MB raw, so step 1 measures the compressed size on Firebase.</td></tr>
     </table>
   </article>
@@ -201,7 +201,7 @@
 // The plan. Claude changes a step's status to "done" when you paste its Done prompt.
 const STEPS = [
   {
-    n: 1, status: "todo",
+    n: 1, status: "done",
     title: "Scaffold and ship",
     goal: "An empty-but-alive Godot 2D project that builds for the web and deploys to chabruh-surf.web.app, so every later step can be seen on a phone.",
     build: [

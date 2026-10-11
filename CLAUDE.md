@@ -4,7 +4,7 @@ A laid-back 2D side-view surfing game for the browser (phone in landscape, or de
 
 - Live site: https://chabruh-surf.web.app (Firebase project `chabruh-surf`)
 - Repo: https://github.com/ucsbjd/Chabruh (private)
-- Replaces an earlier 3D three.js prototype. It is kept at git tag `legacy-3d` (commit `5dd0612`). The working tree intentionally does not contain it, so `git status` shows its files as deleted until step 1 commits that. Do not restore them.
+- Replaces an earlier 3D three.js prototype. It is kept at git tag `legacy-3d` (commit `5dd0612`). It was removed from the working tree in step 1. Do not restore it.
 
 ## Where we are
 
@@ -86,9 +86,9 @@ storyboardimages/         local-only reference photos (gitignored)
 firebase.json  .firebaserc  .github/workflows/
 ```
 
-Step 1 creates everything listed here that does not exist yet.
-
 ## Commands (Windows, PowerShell)
+
+Shortcuts that wrap the commands below: `tools\test.ps1`, `tools\build.ps1`, `tools\serve.ps1` (port 8060), `tools\preview.ps1 -Step N`. The browser pane can serve the build with `preview_start` using the `web` entry in `.claude/launch.json`. Shader compile errors may not show up in headless runs (they use a dummy renderer), so always check the browser console too.
 
 `godot` is on PATH only in a new shell. If it is missing, use `%LOCALAPPDATA%\Microsoft\WinGet\Links\godot_console.exe`. Use `godot_console`, not `godot`, for command-line runs. The GUI build swallows stdout on Windows.
 

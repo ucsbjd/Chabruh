@@ -29,6 +29,9 @@ const PEEL_RATE := 8.0
 const DEFAULT_SIZE := 0.6
 const DEFAULT_HOLLOW := 0.5
 const DEFAULT_PEEL_OFFSET := 3.0
+const DEFAULT_POSE := "trim"
+## The surfer sits on the face at an angle that follows the wave, but never tips past this, in degrees.
+const MAX_GROUND_ANGLE := 14.0
 
 var _time := 0.0
 var _travel := 0.0
@@ -38,6 +41,7 @@ var _crop := 0.0   # screen heights hidden on each side when the screen is narro
 var peel_offset := DEFAULT_PEEL_OFFSET
 var _swing := 0.0   # 0 behind the surfer, 1 swung round to the barrel side
 var _first_frame := true
+var _pose_index := PoseLibrary.ORDER.find(DEFAULT_POSE)
 
 var _ridges: Array[RidgeLayer] = []
 ## Each shader material with the mood properties it declares as uniforms.
@@ -45,7 +49,7 @@ var _mood_uniforms: Array[Dictionary] = []
 var _materials: Array[ShaderMaterial] = []
 
 @onready var _stage: WaveStage = $WaveStage
-@onready var _surfer: ScaleMarker = $ScaleMarker
+@onready var _surfer: Surfer = $Surfer
 @onready var _spray: ColorRect = $Spray
 @onready var _panel: DebugPanel = $DebugPanel
 
@@ -65,6 +69,8 @@ func _ready() -> void:
 	_on_resized()
 	_apply_mood()
 	set_wave(_url_number("size", DEFAULT_SIZE), _url_number("hollow", DEFAULT_HOLLOW), _url_number("peel", DEFAULT_PEEL_OFFSET))
+	var requested_pose := UrlParams.get_value("pose")
+	set_surfer_pose(requested_pose if PoseLibrary.has_pose(requested_pose) else DEFAULT_POSE, 0.0)
 
 
 func _process(delta: float) -> void:
@@ -85,6 +91,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			Palette.cycle()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
+		elif event.pressed and not event.echo and event.keycode == KEY_P:
+			set_surfer_pose(PoseLibrary.ORDER[(_pose_index + 1) % PoseLibrary.ORDER.size()])
 	# Touches arrive as emulated mouse clicks, so this one branch covers phone and desktop.
 	elif event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -101,7 +109,13 @@ func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void
 	_panel.show_values(wave_size, hollowness, peel_offset)
 
 
-## Frames the camera on the surfer and stands the stand-in surfer and the spray cloud on the wave.
+## Eases the surfer into a pose from PoseLibrary (temporary: step 5 picks poses from how they ride).
+func set_surfer_pose(pose_name: String, seconds := Surfer.BLEND_SECONDS) -> void:
+	_pose_index = maxi(PoseLibrary.ORDER.find(pose_name), 0)
+	_surfer.set_pose(pose_name, seconds)
+
+
+## Frames the camera on the surfer and stands the surfer and the spray cloud on the wave.
 func _place_surfer_and_spray() -> void:
 	var model := _stage.model
 	var feet := model.surface_point(peel_offset, SURFER_FACE_HEIGHT)
@@ -112,6 +126,11 @@ func _place_surfer_and_spray() -> void:
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
+	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
+	var ahead_px := _stage.project(model.surface_point(peel_offset + 0.6, SURFER_FACE_HEIGHT))
+	var behind_px := _stage.project(model.surface_point(peel_offset - 0.6, SURFER_FACE_HEIGHT))
+	var slope := rad_to_deg(atan2(behind_px.y - ahead_px.y, behind_px.x - ahead_px.x))
+	_surfer.set_ground_angle(clampf(slope, -MAX_GROUND_ANGLE, MAX_GROUND_ANGLE))
 
 	var crest_px := _stage.project(model.crest_point(0.0))
 	var pixels_per_meter := (feet_px.y - head_px.y) / WaveModel.SURFER_HEIGHT

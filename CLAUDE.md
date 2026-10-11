@@ -91,6 +91,20 @@ The wave is the key feature, with the surfer. It is a **parametric, physics-info
 - **Using it from gameplay:** `surface_point(d, u)` is a world position (x along the crest and equal to `-d`, y up, z toward the beach and the camera; u is 0 at the trough and 1 at the top of the face), `surface_normal(d, u)`, `crest_point(d)`, `lip_tip_point(d)`, `crest_height_at(d)`, `face_angle(u)`, `zone_at(d)`, `barrel()`, `peel_speed()`. `WaveStage.project(world_point)` turns any of those points into screen pixels, which is how the surfer, the spray and later the board's wake are placed in 2D. The scene's `world.gd` owns the surfer's `d` (`peel_offset`, in meters).
 - **Tuning:** `WaveModel` constants (`MIN_HEIGHT`, `SHOULDER_MIN`, `COLLAPSE_LENGTH`, and so on) set the wave's character; `size` and `hollowness` are the two dials.
 
+## The surfer (decided in step 4)
+
+A **jointed paper doll of flat polygons**, built once, moved only by transforms (nothing redraws). It is chunky and athletic on purpose, like the Kling back-view reference sheets and the "chunky, simplified shapes" art direction: a big lime torso with a pink chevron across the back and pink cuffs, ink capri pants with pink side stripes, bare forearms, shins and feet, a bigger head, and a cream board with a pink and aqua graphic.
+
+- **Rig:** `Surfer` (`scripts/surfer.gd`, a `Node2D`). Parts hang in a hierarchy (pelvis, torso, head and hair, two arms of upper arm and forearm, two legs of thigh, shin and foot, and the board), so limbs cannot detach. `STANDING_HEIGHT` is 1.0 rig unit; `place(feet_px, pixels_tall)` scales it. `set_ground_angle(degrees)` tilts the whole surfer, and `world.gd` sets it from the slope of the wave face under their feet (never past `MAX_GROUND_ANGLE`).
+- **Poses are data:** `PoseLibrary` (`scripts/pose_library.gd`) has `DEFAULT` plus a table per pose that lists only what differs; `complete(name)` fills in the rest. The key list and the angle convention are at the top of that file (0 hangs straight down, positive swings toward the screen's left, the way the surfer travels). `ORDER` and `LABELS` drive the gallery.
+- **Legs are solved, not posed:** each pose gives where each ankle should stand (`foot_*_x/y`, in board space when `feet_pin` is 1, in the surfer's own space when it is 0) and a two-bone solve (`Surfer.solve_leg`) finds the thigh and shin angles. Feet therefore stay on the board in every pose and through every blend. Arms, torso, head and board are plain angles.
+- **Blending:** `set_pose(name, seconds)` eases every number from the current values to the new pose (default `BLEND_SECONDS` = 0.15), so a blend can start mid-blend without a jump. A small idle sway (`sway` in the pose, 0 in the air) is added every frame.
+- **Light:** violet shade on the side away from the sun and a warm rim toward it, from `shaders/surfer.gdshader` (two materials, `is_rim` 0 and 1) fed the mood roles `surfer_shade` and `surfer_rim`, so a mood fade never redraws a polygon. The suit, skin and board colours are `Palette` consts (`SUIT_PRIMARY`, `SUIT_SECONDARY`, `SUIT_ACCENT`, `SKIN`, `BOARD`).
+- **Adding or tuning a pose:** edit its table in `pose_library.gd`, add the name to `ORDER` and `LABELS`, then look at it with `?gallery` (or `.\tools\capture.ps1 -Gallery`, or `-Pose name` on the wave). `tests/run_tests.gd` checks every riding pose reaches its foot targets and keeps both feet on the board.
+- **Looking at it:** `?gallery` shows every pose plus a cycler; `?pose=top_turn` and the P key set the pose in the main scene (temporary until step 5 picks poses from how they ride).
+- **Limits:** the rig is a flat, back-view drawing (no true 3D), so it cannot go behind the lip curtain; that needs a second render pass for just the lip and belongs to step 7. A goofy-foot option can mirror it with `scale.x = -1` later.
+- **Reference art:** `storyboardimages/kling/pose-sheet-01` (ride poses from behind, the best one), `-03` (pop-up, walk, wipeout) and `-04` (air, floater, paddle) were generated for this step with `kling-image-v3_0_omni`, 2 credits each at 2k (8 credits for 4 images; `-02` is an unused front view with a title). The model drew skateboard wheels on some boards; ignore them. It works best with the key frame as the only style reference (with a sheet as a reference it copies the figures).
+
 ## Tech
 
 - **Godot 4.7.2 stable**, GDScript only, **Compatibility renderer** (the only one that exports to web), **single-threaded web export** (no COOP/COEP headers needed on Firebase Hosting). Android export may come later, so avoid web-only hacks where a plain Godot feature exists.
@@ -119,7 +133,9 @@ Shortcuts that wrap the commands below: `tools\test.ps1`, `tools\build.ps1`, `to
 
 ```powershell
 # a true-colour screenshot (see Gotchas: the browser pane distorts colour), plus the average frame time
-.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 3 -Mood sunset
+.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 3 -Mood sunset -Pose trim
+# the pose gallery in one image
+.\tools\capture.ps1 -Out gallery.png -Gallery -Resolution 1920x1080
 # the same with vsync off, to measure what the GPU can sustain (also -Resolution 1920x1080)
 .\tools\capture.ps1 -Out shot.png -Perf -Frames 240
 
@@ -167,6 +183,7 @@ Export templates must match the editor version exactly (4.7.2.stable), in `%APPD
 - Godot web needs `touch-action: none` and `overflow: hidden` on the page, or touch drags scroll the page. Use a small custom HTML shell if needed.
 - Name the export `index.html`.
 - The scene is fill-rate bound. Measured on an Intel Arc 140V laptop GPU with vsync off: 417 fps at 1280x720, 172 at 1920x1080, about 89 at 2560x1440, so roughly 3 ms per megapixel for the old flat 2D wave. The 3D wave of step 3 is cheaper: 2.0 ms at 1280x720, 4.6 ms at 1920x1080 and 8.7 ms at 2560x1440 for the big barrel (`tools\capture.ps1 -Perf`). The old figure came from (`godot_console --path game --rendering-driver opengl3 --disable-vsync --print-fps --resolution 1280x720 --quit-after 600`). A phone at 3x density would draw about 3.6 megapixels, so `web/shell.html` caps `devicePixelRatio` at 1.5 (`?dpr=` overrides it). Budget new full-screen layers against this.
+- Scripts with a `class_name` that `tests/run_tests.gd` refers to (like `Surfer` and `PoseGallery`) are compiled before the autoloads exist, so they must not name `Palette` directly. Use `get_node("/root/Palette")`. Scripts that are only loaded through a scene (like `world.gd`) can name it.
 - `WaveStage.rebuild()` (the mesh sweep, in GDScript) costs about 15 ms on a laptop CPU, measured by changing the wave every frame for 200 frames. That is fine while a slider or key is held, but step 7 must not rebuild every frame: change the wave in steps a few times a second, or move the work into the shader.
 - The browser pane throttles `requestAnimationFrame` to about 30 fps, or stalls it, whenever it is hidden, so in-pane frame rates are only valid while the pane is visible. Prefer the desktop `--print-fps` run above for performance numbers.
 - `--script` test mode does not register autoloads as global names; reach their code through `preload("res://scripts/palette.gd")`.

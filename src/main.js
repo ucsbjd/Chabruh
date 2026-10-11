@@ -3,10 +3,12 @@ import { Wave, KEY_ROW, ROWS, TROUGH_ROW } from './waveProfile.js';
 import { WaveMesh, U_MIN, U_MAX } from './waveMesh.js';
 import { SkySystem } from './sky.js';
 import { makeWaterNormalMap, makeFoamMap, makeSprayTexture } from './textures.js';
-import { makeWaterUniforms, makeWaveMaterial, makeOceanMaterial, makeOceanGeometry, gerstnerHeight } from './water.js';
+import { makeWaterUniforms, makeWaveMaterial, makeOceanMaterial, makeOceanGeometry, gerstnerHeight, setWaterColors } from './water.js';
 import { Surfer } from './surfer.js';
 import { Rider } from './physics.js';
-import { FingerboardInput } from './input.js';
+import { FingerboardInput, tune, saveTune } from './input.js';
+import { view, layout } from './layout.js';
+import { Retro } from './retro.js';
 import { OceanAudio } from './audio.js';
 import { Spray } from './particles.js';
 
@@ -27,6 +29,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const canvas = document.getElementById('game');
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const retro = new Retro(renderer);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -37,7 +40,7 @@ const root = new THREE.Group(); // everything in the wave's frame; mirrored for 
 scene.add(root);
 
 const sky = new SkySystem(renderer, scene);
-sky.set('golden');
+sky.set('vice');
 
 const normalMap = makeWaterNormalMap(256);
 const foamMap = makeFoamMap(512);
@@ -72,7 +75,8 @@ const spray = new Spray(6000, makeSprayTexture(64), sky.sunColor);
 root.add(spray.points);
 
 const rider = new Rider(wave);
-const input = new FingerboardInput(canvas);
+rider.assist = tune.feel;
+const input = new FingerboardInput(canvas, view);
 const audio = new OceanAudio();
 
 function applyTime(name) {
@@ -82,12 +86,18 @@ function applyTime(name) {
   sunLight.color.setRGB(c.x / m, c.y / m, c.z / m);
   sunLight.intensity = 2.4 * (sky.preset.sunI / 2.4);
   spray.material.uniforms.uSunDir.value.copy(sky.sunDir);
+  setWaterColors(shared, name === 'vice' ? 'vice' : 'real');
 }
-applyTime('golden');
+applyTime('vice');
 
 // ---------- config ----------
-const cfg = { wave: 'left', stance: 'regular', time: 'golden' };
-try { Object.assign(cfg, JSON.parse(localStorage.getItem('chabruh.cfg') || '{}')); } catch (e) { /* storage unavailable */ }
+const cfg = { wave: 'left', stance: 'regular', time: 'vice', look: 'retro', v: 2 };
+try {
+  const saved = JSON.parse(localStorage.getItem('chabruh.cfg') || '{}');
+  // settings from before the Vice look keep wave and stance only
+  if (saved.v !== 2) { delete saved.time; delete saved.look; }
+  Object.assign(cfg, saved, { v: 2 });
+} catch (e) { /* storage unavailable */ }
 function saveCfg() { try { localStorage.setItem('chabruh.cfg', JSON.stringify(cfg)); } catch (e) { /* ignore */ } }
 function frontside() { return (cfg.stance === 'regular' && cfg.wave === 'right') || (cfg.stance === 'goofy' && cfg.wave === 'left'); }
 function applyCfg() {
@@ -100,6 +110,7 @@ function applyCfg() {
   rider.frontside = frontside();
   surfer.goofy = frontside(); // in the sim frame, facing the wave = goofy on a left
   applyTime(cfg.time);
+  resize();
   ui.update();
 }
 
@@ -108,6 +119,8 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   menu: $('menu'), hud: $('hud'), msg: $('msg'), cue: $('cue'), fade: $('fade'), status: $('status'), dbg: $('debug'),
   pad: $('pad'), padBoard: $('padBoard'), padRing: $('padRing'),
+  setup: $('setup'), setupStep: $('setupStep'), setupText: $('setupText'), setupRing: $('setupRing'), setupDot: $('setupDot'),
+  setupDone: $('setupDone'), feel: $('feel'), reach: $('reach'),
   update() {
     for (const el of document.querySelectorAll('[data-opt]')) {
       el.setAttribute('aria-pressed', String(cfg[el.dataset.opt] === el.dataset.val));
@@ -115,16 +128,30 @@ const ui = {
     $('approach').textContent = `${frontside() ? 'Frontside' : 'Backside'} ${cfg.wave}`;
     // mini board points the way you travel on screen
     ui.pad.classList.toggle('flip', !input.frontIsRight);
+    // and sits on the other side of the screen from your fingers
+    const px = tune.set ? (tune.padX < 0.4 ? 0.8 : tune.padX > 0.6 ? 0.2 : 0.5) : 0.5;
+    ui.pad.style.left = `${px * 100}%`;
+    ui.feel.value = String(Math.round(tune.feel * 100));
+    ui.reach.value = String(Math.round(tune.scale * 100));
   },
 };
 for (const el of document.querySelectorAll('[data-opt]')) {
   el.addEventListener('click', () => { cfg[el.dataset.opt] = el.dataset.val; saveCfg(); applyCfg(); });
 }
+ui.feel.addEventListener('input', () => { tune.feel = +ui.feel.value / 100; rider.assist = tune.feel; saveTune(); });
+ui.reach.addEventListener('input', () => { tune.scale = +ui.reach.value / 100; saveTune(); });
+$('setupBtn').addEventListener('click', () => openSetup(null));
 $('go').addEventListener('click', () => {
+  // first time on a touch screen: set up the fingers, then paddle out
+  if (isTouch && !tune.set) { openSetup(paddleOut); return; }
+  paddleOut();
+});
+function paddleOut() {
   audio.start();
   try {
     const de = document.documentElement;
     if (isTouch && de.requestFullscreen && !document.fullscreenElement) de.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+    else screen.orientation?.lock?.('landscape').catch(() => {});
   } catch (e) { /* fullscreen not allowed here */ }
   try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) { /* ignore */ }
   ui.menu.hidden = true;
@@ -132,7 +159,7 @@ $('go').addEventListener('click', () => {
   game.demo = false; syncBot();
   ui.fade.classList.remove('on'); game.fading = false;
   beginWait(QUICK ? 6 : 16);
-});
+}
 $('menuBtn').addEventListener('click', () => {
   ui.menu.hidden = false; ui.hud.hidden = true;
   startDemo();
@@ -143,6 +170,83 @@ function startDemo() {
   ui.fade.classList.remove('on'); game.fading = false;
   beginWait(APPROACH + 1.5);
 }
+
+// ---------- finger setup ----------
+// Step 1: rest your fingers where they feel natural (sets where the guide
+// board sits and how far apart your fingers are). Step 2: slide them as far as
+// feels comfortable; that becomes a full push, so nothing feels cramped.
+const setup = { step: 0, hold: 0, max: { x: 0, y: 0 }, then: null };
+function openSetup(then) {
+  setup.then = then;
+  ui.setup.hidden = false;
+  setupStep(1);
+  input.listener = setupListener;
+}
+function setupStep(n) {
+  setup.step = n; setup.hold = 0; setup.max = { x: 0, y: 0 };
+  ui.setupDone.hidden = n !== 3;
+  ui.setupRing.style.opacity = '0'; ui.setupDot.style.opacity = '0';
+  ui.setupStep.textContent = n === 3 ? 'Finger setup done' : `Finger setup ${n}/2`;
+  ui.setupText.textContent = [
+    '',
+    isTouch ? 'Put your index and middle fingers down where they feel natural, like standing on a fingerboard. Hold them still.'
+      : 'Press and hold the mouse where it feels natural.',
+    'Now slide them around as far as feels comfortable: up, down, left and right. Lift them when you are done.',
+    'Got it. That slide is now a full push. Change it any time with Reach and Feel in the menu.',
+  ][n];
+}
+function setupListener(type) {
+  if (setup.step === 2 && type === 'up' && input.pointers.size === 0) {
+    const R = setup.max;
+    if (R.x < 25 && R.y < 20) { setupStep(2); return; }
+    tune.reachX = clamp(R.x * 0.85, 50, 320);
+    tune.reachY = clamp(R.y * 0.85, 40, 260);
+    tune.scale = 1;
+    tune.set = true;
+    saveTune();
+    ui.update();
+    setupStep(3);
+  }
+}
+function setupTick(dt) {
+  if (ui.setup.hidden) return;
+  const on = input.pointers.size > 0 && input.origin;
+  if (on) {
+    ui.setupDot.style.opacity = '1';
+    ui.setupDot.style.left = `${input.centroid.x}px`; ui.setupDot.style.top = `${input.centroid.y}px`;
+  } else ui.setupDot.style.opacity = '0';
+  if (setup.step === 1 && on) {
+    const moved = Math.hypot(input.centroid.x - input.origin.x, input.centroid.y - input.origin.y);
+    if (moved > 18) { input.origin = { ...input.centroid }; setup.hold = 0; }
+    setup.hold += dt;
+    if (setup.hold > 0.7 && (input.pointers.size >= 2 || !isTouch || setup.hold > 1.6)) {
+      tune.padX = input.origin.x / view.w; tune.padY = input.origin.y / view.h;
+      tune.spread = input.spread;
+      buzz(15);
+      setupStep(2);
+    }
+  } else if (setup.step === 1) setup.hold = 0;
+  if (setup.step === 2 && on) {
+    setup.max.x = Math.max(setup.max.x, Math.abs(input.centroid.x - input.origin.x));
+    setup.max.y = Math.max(setup.max.y, Math.abs(input.centroid.y - input.origin.y));
+    const r = ui.setupRing.style;
+    r.opacity = '1';
+    r.left = `${input.origin.x - setup.max.x}px`; r.top = `${input.origin.y - setup.max.y}px`;
+    r.width = `${setup.max.x * 2}px`; r.height = `${setup.max.y * 2}px`;
+  }
+}
+function closeSetup() {
+  ui.setup.hidden = true;
+  input.listener = null;
+  const then = setup.then; setup.then = null;
+  if (then) then();
+}
+$('setupDone').addEventListener('click', closeSetup);
+$('setupSkip').addEventListener('click', () => { tune.set = true; saveTune(); ui.update(); closeSetup(); });
+$('setupRedo').addEventListener('click', () => setupStep(1));
+// buttons on the setup screen shouldn't count as fingers
+for (const b of ui.setup.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.setup.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; canvas.dispatchEvent(new PointerEvent('pointerdown', e)); });
 
 let msgTimer = 0, cueTimer = 0;
 function message(text, secs = 3.2) { ui.msg.textContent = text; ui.msg.classList.add('on'); msgTimer = secs; }
@@ -481,15 +585,19 @@ window.addEventListener('keydown', (e) => { if (e.code === 'Backquote') game.deb
 // ---------- main loop ----------
 let last = performance.now(), fpsAvg = 1 / 60;
 function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+  layout();
+  const w = view.w, h = view.h;
   renderer.setSize(w, h, false);
+  retro.setSize(w, h);
   camera.aspect = w / h;
   // keep the horizontal view wide enough in portrait-ish windows
   camera.fov = w / h < 1.3 ? 62 : 50;
   camera.updateProjectionMatrix();
-  spray.material.uniforms.uScale.value = h * 0.9;
+  // point sprites are sized in buffer pixels; keep them the same share of the screen in the small retro frame
+  spray.material.uniforms.uScale.value = (cfg.look === 'retro' ? retro.size.h / renderer.getPixelRatio() : h) * 0.9;
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 resize();
 
 function step(dt) {
@@ -524,8 +632,9 @@ function step(dt) {
     }
     if (wave.close) { wave.close.t += dt; wave.version++; }
 
-    const inp = { front: input.front, back: input.back, steer: input.steer };
-    if (game.catchT < 0.5) { inp.front = 0; inp.back = 0; inp.steer = 0; }
+    // the catch is automatic: your fingers fade in once you are up and going
+    const k = clamp((game.catchT - 0.6) / 0.8, 0, 1);
+    const inp = { front: input.front * k, back: input.back * k, steer: input.steer * k };
     rider.step(dt, inp);
     for (const ev of rider.events) handleEvent(ev);
     if (game.state === 'ride' && rider.result) endRide(rider.result);
@@ -562,6 +671,7 @@ function visual(dt) {
   fill.position.copy(camera.position).add(new THREE.Vector3(0, 4, 0));
   fill.target.position.copy(camState.look);
   sky.sky.position.copy(camera.position);
+  sky.vice.position.copy(camera.position);
 
   // audio
   let roar = 0;
@@ -571,6 +681,7 @@ function visual(dt) {
 
   if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) ui.msg.classList.remove('on'); }
   if (cueTimer > 0) { cueTimer -= dt; if (cueTimer <= 0) ui.cue.classList.remove('on'); }
+  setupTick(dt);
   updateHud();
 }
 
@@ -589,6 +700,11 @@ function handleEvent(ev) {
   }
 }
 
+function draw() {
+  if (cfg.look === 'retro') retro.render(scene, camera, renderer.toneMappingExposure * 1.6);
+  else renderer.render(scene, camera);
+}
+
 function frame(now) {
   let dt = (now - last) / 1000;
   last = now;
@@ -598,7 +714,7 @@ function frame(now) {
   const n = Math.ceil(dt / (1 / 120));
   for (let i = 0; i < n; i++) step(dt / n);
   visual(dt);
-  renderer.render(scene, camera);
+  draw();
   requestAnimationFrame(frame);
 }
 
@@ -607,7 +723,7 @@ startDemo();
 requestAnimationFrame(frame);
 
 // test hooks
-window.__game = { surfer, game, rider, wave, cfg, step, visual, beginWait, input, camera, renderer, scene, applyCfg, message };
+window.__game = { surfer, game, rider, wave, cfg, step, visual, beginWait, input, camera, renderer, scene, applyCfg, message, tune, retro, openSetup, draw };
 if (BOT && (search.has('autostart') || hash.includes('autostart'))) {
   ui.menu.hidden = true; ui.hud.hidden = false; beginWait(2);
 }

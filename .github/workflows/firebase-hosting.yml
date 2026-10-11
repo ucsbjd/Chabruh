@@ -1,7 +1,6 @@
-# Deploys the game to Firebase Hosting on every push to main.
-# Needs, in the repo's Settings > Secrets and variables > Actions:
-#   secret   FIREBASE_SERVICE_ACCOUNT  (JSON key of a service account with Firebase Hosting Admin)
-#   variable FIREBASE_PROJECT_ID       (the Firebase project id)
+# Deploys the game to Firebase Hosting (project chabruh-surf) on every push to main.
+# Needs one repo secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a service
+# account in that project (Firebase console > Project settings > Service accounts).
 name: Deploy to Firebase Hosting
 on:
   push:
@@ -10,12 +9,18 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ vars.FIREBASE_PROJECT_ID != '' }}
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
     steps:
+      - name: Skip until the Firebase key is added
+        if: env.HAS_KEY != 'true'
+        run: echo "FIREBASE_SERVICE_ACCOUNT secret not set; skipping deploy."
       - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
       - uses: FirebaseExtended/action-hosting-deploy@v0
+        if: env.HAS_KEY == 'true'
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          projectId: chabruh-surf
           channelId: live

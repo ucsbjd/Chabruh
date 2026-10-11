@@ -36,6 +36,7 @@ export class Rider {
     this.y = new Float32Array(ROWS);
     this.arc = new Float32Array(ROWS);
     this.frontside = true;
+    this.assist = 0.7; // 0 loose .. 1 the wave carries you back into trim
     this.reset();
   }
 
@@ -44,7 +45,7 @@ export class Rider {
     this.u = 5; this.s = 2; this.V = 9; this.th = -0.4; this.om = 0;
     this.pf = 0; this.pb = 0; this.st = 0;
     this.pivot = 0; this.pivotDir = 1; this.pivotTurned = 0;
-    this.time = 0; this.slowTime = 0;
+    this.time = 0; this.slowTime = 0; this.drop = 0;
     this.barrel = 0; this.barrelTime = 0; this.inBarrel = false;
     this.cover = 0;
     this.spray = 0;
@@ -64,6 +65,7 @@ export class Rider {
     this.sampleAt(u);
     this.s = this.sTop * sFrac;
     this.V = V; this.th = th;
+    this.drop = 1.3; // seconds of automatic drop down the face after the catch
   }
 
   // Sample the column at u and derive arc lengths and the ridable top.
@@ -142,7 +144,8 @@ export class Rider {
     const V = this.V;
 
     // ---- steering ----
-    const rate = (0.9 + 2.5 * clamp(V / 9, 0, 1.25)) * (this.frontside ? 1.06 : 0.96);
+    const A = this.assist;
+    const rate = (0.9 + 2.5 * clamp(V / 9, 0, 1.25)) * (this.frontside ? 1.06 : 0.96) * (1 - 0.3 * A);
     const dDown = arcTo(this.th, -Math.PI / 2);
     const dUp = arcTo(this.th, Math.PI / 2);
     // carve toward the top or the bottom of the face; a half turn always
@@ -151,6 +154,23 @@ export class Rider {
     let omT = st > 0 ? rate * st * clamp(dUp / 0.5, -1, 1) : rate * -st * clamp(dDown / 0.5, -1, 1);
     // leaning on the front foot also pulls the nose down a little
     omT += rate * 0.25 * pf * clamp(dDown / 0.5, -1, 1);
+
+    // The wave carries you: with the fingers quiet, the board settles back
+    // into a trim line through the pocket, a little above the middle of the
+    // face. The more forgiving the feel, the stronger the pull.
+    const quiet = 1 - Math.min(1, Math.abs(st) * 1.6);
+    if (A > 0 && quiet > 0) {
+      const thTrim = clamp(0.3 * (this.sTop * 0.52 - this.s) - 0.05 * (this.u - 4), -0.75, 0.75);
+      omT += A * 2.6 * quiet * clamp(wrap(thTrim - this.th), -1.2, 1.2);
+    }
+    // straight after the catch: angle down the face and get going
+    if (this.drop > 0) {
+      this.drop -= dt;
+      const w = clamp(this.drop / 0.5, 0, 1);
+      const thDrop = this.s > this.sTop * 0.4 ? -0.85 : -0.25;
+      omT = omT * (1 - w) + 5 * wrap(thDrop - this.th) * w;
+      this.V = Math.max(this.V, 7.5);
+    }
 
     // stomping the tail while carving up pivots the board (snaps, cutbacks)
     if (!this.pivot && pb > 0.75 && st > 0.25 && V > 4.2) {
@@ -179,7 +199,11 @@ export class Rider {
     const pump = this.pivot ? 0 : 1.5 * Math.abs(this.om) * Math.sqrt(along) * (1 - smoothstep(11, 16, V)) * smoothstep(1.5, 4, V);
     this.pump += (pump - this.pump) * Math.min(1, dt * 4);
     const turnLoss = 0.045 * this.om * this.om * V + (this.pivot ? 0.55 * V : 0);
-    this.V = clamp(V + (aG - drag + thrust - stall + pump - turnLoss) * dt, 0, 20);
+    // momentum of the wave: the face nudges you toward the speed that keeps
+    // you in the pocket (forgiving feel only; it never does the riding for you)
+    const vPocket = P + clamp((3 - this.u) * 0.35, -3, 3);
+    const carry = A * 0.55 * clamp(vPocket - V * Math.max(0.2, Math.cos(this.th)), -2.5, 2.5) * (this.pivot ? 0 : 1);
+    this.V = clamp(V + (aG - drag + thrust - stall + pump - turnLoss + carry) * dt, 0, 20);
 
     // ---- move ----
     const H0 = wave.H0;

@@ -3,81 +3,113 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0b1a20">
+<meta name="theme-color" content="#1b0b3b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="screen-orientation" content="landscape">
+<link rel="manifest" href="manifest.webmanifest">
 <!-- BODY-START -->
 <title>Chabruh</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;800&family=Karla:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yellowtail&family=Press+Start+2P&family=Karla:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
-  /* Single dark look: a game screen over the live ocean. Text sits on scrims, not cards. */
+  /* 80s Miami: night violet, hot pink, pool teal. A game screen over the live ocean. */
   :root {
-    --ink: #f3ece0;        /* sun-bleached paper white */
-    --ink-dim: #b9c3c2;
-    --sea: #0b1a20;        /* deep water */
-    --wax: #e8b04a;        /* board-wax amber accent */
-    --line: rgba(243, 236, 224, 0.28);
-    --scrim: rgba(6, 16, 20, 0.55);
-    --display: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+    --ink: #fff6d5;         /* warm white */
+    --ink-dim: #e3c9e8;
+    --night: #1b0b3b;       /* deep violet */
+    --pink: #ff3ea5;        /* hot pink accent */
+    --teal: #1fd1c1;        /* pool teal */
+    --sun: #ffb547;
+    --line: rgba(255, 246, 213, 0.32);
+    --scrim: rgba(13, 2, 33, 0.6);
+    --script: 'Yellowtail', 'Brush Script MT', cursive;
+    --pixel: 'Press Start 2P', ui-monospace, monospace;
     --body: 'Karla', 'Helvetica Neue', Arial, sans-serif;
     color-scheme: dark;
   }
-  html, body { height: 100%; margin: 0; background: var(--sea); color: var(--ink); overflow: hidden; }
+  html, body { height: 100%; margin: 0; background: var(--night); color: var(--ink); overflow: hidden; }
   body { font: 15px/1.45 var(--body); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* everything lives on the stage; on an upright phone the stage is turned sideways */
+  #stage { position: fixed; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; transform-origin: 0 0; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; image-rendering: pixelated; }
   [hidden] { display: none !important; }
   button { font: inherit; color: inherit; }
-  button:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
   /* ---- title / options ---- */
   #menu {
-    position: fixed; inset: 0; display: flex; align-items: center;
-    padding-inline: max(24px, env(safe-area-inset-left)) 24px;
-    background: linear-gradient(90deg, rgba(5, 14, 18, 0.82) 0%, rgba(5, 14, 18, 0.45) 46%, rgba(5, 14, 18, 0) 72%);
+    position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); align-items: center; gap: 28px;
+    padding: max(16px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: linear-gradient(90deg, rgba(13, 2, 33, 0.85) 0%, rgba(13, 2, 33, 0.6) 55%, rgba(13, 2, 33, 0.25) 100%);
+    overflow-y: auto;
   }
-  .panel { max-width: 30rem; display: grid; gap: 14px; }
+  .lead { display: grid; gap: 12px; justify-items: start; }
   h1 {
-    font: 800 clamp(56px, 13vh, 112px)/0.82 var(--display); letter-spacing: 0.01em; margin: 0;
-    text-transform: uppercase; text-wrap: balance;
+    font: 400 clamp(64px, 17vh, 132px)/0.9 var(--script); margin: 0 0 0 -4px; letter-spacing: 0.01em;
+    background: linear-gradient(180deg, #ffe08a 0%, #ff8e53 38%, #ff3ea5 70%, #9b3aa8 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(3px 3px 0 #0aa5a6) drop-shadow(0 0 18px rgba(255, 62, 165, 0.45));
+    padding-right: 10px;
   }
-  .tag { margin: 0; color: var(--ink-dim); font-style: italic; max-width: 26rem; }
-  .opts { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; margin-top: 4px; }
-  .opts > span { font: 500 13px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+  .tag { margin: 0; color: var(--ink-dim); font-style: italic; max-width: 24rem; }
+  #go {
+    margin-top: 4px; cursor: pointer;
+    background: var(--pink); color: #fff; border: 0; border-radius: 4px;
+    padding: 14px 22px; font: 400 14px/1 var(--pixel); letter-spacing: 0.04em; text-transform: uppercase;
+    box-shadow: 4px 4px 0 #0aa5a6;
+  }
+  #go:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #0aa5a6; }
+  .opts { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+  .opts > span { font: 400 9px/1.2 var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; color: var(--teal); }
   .seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .seg button {
     background: transparent; border: 1px solid var(--line); border-radius: 999px;
-    padding: 6px 13px; cursor: pointer; font-size: 14px;
+    padding: 5px 12px; cursor: pointer; font-size: 14px;
   }
-  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--sea); border-color: var(--ink); }
-  #approach { font: 500 15px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--wax); }
-  #go {
-    justify-self: start; margin-top: 6px; cursor: pointer;
-    background: var(--wax); color: #1a1205; border: 0; border-radius: 999px;
-    padding: 12px 26px; font: 800 20px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase;
-  }
-  .how { font-size: 13px; color: var(--ink-dim); margin: 0; max-width: 28rem; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--night); border-color: var(--ink); }
+  #approach { font: 400 10px/1 var(--pixel); color: var(--sun); }
+  .dial { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-dim); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--teal), var(--pink)); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--teal), var(--pink)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: var(--ink); border: 3px solid var(--night); }
+  input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--ink); border: 3px solid var(--night); }
+  .linkish { background: none; border: 0; padding: 0; color: var(--teal); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; justify-self: start; }
+  .how { font-size: 13px; color: var(--ink-dim); margin: 0; max-width: 26rem; }
   .how b { color: var(--ink); font-weight: 600; }
 
+  /* ---- finger setup ---- */
+  #setup { position: absolute; inset: 0; background: rgba(13, 2, 33, 0.9); display: grid; place-items: center; text-align: center; padding: 20px; }
+  #setup h2 { font: 400 12px/1.4 var(--pixel); color: var(--teal); margin: 0 0 10px; letter-spacing: 0.04em; }
+  #setup p { font-size: clamp(16px, 4vh, 21px); margin: 0 auto; max-width: 30rem; }
+  #setupRing { position: absolute; border: 2px dashed var(--pink); border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+  #setupDot { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--sun); pointer-events: none; opacity: 0; }
+  #setup .row { display: flex; gap: 12px; justify-content: center; margin-top: 18px; }
+  #setup .row button { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+  #setup .row button.primary { background: var(--pink); border-color: var(--pink); color: #fff; }
+
   /* ---- in-game ---- */
-  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud { position: absolute; inset: 0; pointer-events: none; }
   #menuBtn {
     pointer-events: auto; position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right));
     background: var(--scrim); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
   }
   #status {
-    position: absolute; top: max(14px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left));
-    font: 500 15px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink);
-    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+    position: absolute; top: max(16px, env(safe-area-inset-top)); left: max(18px, env(safe-area-inset-left));
+    font: 400 10px/1.3 var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+    text-shadow: 2px 2px 0 var(--night);
   }
   #msg {
-    position: absolute; left: 50%; top: 22%; transform: translateX(-50%); max-width: min(34rem, 86vw); text-align: center;
-    font: 500 clamp(20px, 4.4vh, 30px)/1.15 var(--display); letter-spacing: 0.04em; text-wrap: balance;
-    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 0.5s;
+    position: absolute; left: 50%; top: 20%; transform: translateX(-50%); max-width: min(34rem, 86%); text-align: center;
+    font: 400 clamp(12px, 3vh, 17px)/1.6 var(--pixel); text-wrap: balance; color: var(--ink);
+    text-shadow: 2px 2px 0 var(--night), 0 0 14px rgba(255, 62, 165, 0.6); opacity: 0; transition: opacity 0.5s;
   }
   #msg.on { opacity: 1; }
   #cue {
-    position: absolute; left: 50%; bottom: 20%; transform: translateX(-50%);
-    font: italic 400 clamp(16px, 3.4vh, 22px)/1 var(--body); color: var(--ink); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+    position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); white-space: nowrap;
+    font: 400 clamp(30px, 8vh, 52px)/1 var(--script); color: var(--pink); text-shadow: 2px 2px 0 #0aa5a6;
     opacity: 0;
   }
   #cue.on { animation: cue 1.8s ease-out forwards; }
@@ -85,31 +117,27 @@
 
   /* mini fingerboard: shows what your two fingers are doing */
   #pad {
-    position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); width: 150px; height: 96px; margin-left: -75px;
+    position: absolute; bottom: max(12px, env(safe-area-inset-bottom)); width: 150px; height: 96px; margin-left: -75px; left: 50%;
     display: grid; place-items: center; opacity: 0.45; transition: opacity 0.25s;
   }
   #pad.down { opacity: 0.95; }
-  #padRing { position: absolute; width: 92px; height: 92px; border-radius: 50%; border: 1px dashed var(--line); }
+  #padRing { position: absolute; width: 92px; height: 70px; border-radius: 50%; border: 1px dashed var(--line); }
   #padBoard { width: 104px; height: 30px; transition: transform 0.04s linear; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
   #pad.flip svg { transform: scaleX(-1); }
-  #padBoard .front { fill: rgba(232, 176, 74, calc(var(--front, 0) * 0.95)); }
-  #padBoard .back { fill: rgba(232, 176, 74, calc(var(--back, 0) * 0.95)); }
+  #padBoard .front { fill: rgba(255, 62, 165, calc(var(--front, 0) * 0.95)); }
+  #padBoard .back { fill: rgba(255, 62, 165, calc(var(--back, 0) * 0.95)); }
 
-  #fade { position: fixed; inset: 0; background: #000; opacity: 0; transition: opacity 1s; pointer-events: none; }
+  #fade { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 1s; pointer-events: none; }
   #fade.on { opacity: 1; }
-  #debug { position: fixed; left: 8px; bottom: 6px; font: 11px/1.3 ui-monospace, Menlo, monospace; color: #cfe; background: rgba(0, 0, 0, 0.45); padding: 3px 6px; pointer-events: none; }
+  #debug { position: absolute; left: 8px; bottom: 6px; font: 11px/1.3 ui-monospace, Menlo, monospace; color: #cfe; background: rgba(0, 0, 0, 0.45); padding: 3px 6px; pointer-events: none; }
 
-  #rotate { display: none; }
-  @media (orientation: portrait) and (pointer: coarse) {
-    #rotate {
-      display: grid; place-items: center; position: fixed; inset: 0; background: var(--sea); z-index: 10; text-align: center; padding-inline: 24px;
-      font: 500 24px/1.2 var(--display); letter-spacing: 0.08em; text-transform: uppercase;
-    }
-  }
-  @media (max-height: 420px) {
-    .panel { gap: 9px; }
-    .how { display: none; }
-  }
+  /* sizes follow the stage, not the window (the stage may be turned sideways) */
+  .compact #menu { gap: 18px; }
+  .compact .opts { gap: 6px 12px; }
+  .compact .seg button { padding: 4px 10px; font-size: 13px; }
+  .compact .how { display: none; }
+  .compact h1 { font-size: 72px; }
+  .narrow #menu { grid-template-columns: 1fr; }
   @media (prefers-reduced-motion: reduce) { #cue.on { animation: none; opacity: 1; } }
 </style>
 <script type="importmap">
@@ -121,24 +149,42 @@
 <!-- HEAD-END -->
 </head>
 <body>
+<div id="stage">
 <canvas id="game"></canvas>
 
 <div id="menu">
-  <div class="panel">
+  <div class="lead">
     <h1>Chabruh</h1>
     <p class="tag">Sit in the lineup. Wait for a set. Find the pocket and stay in it.</p>
-    <div class="opts">
-      <span>Wave</span>
-      <div class="seg"><button data-opt="wave" data-val="left">Left</button><button data-opt="wave" data-val="right">Right</button></div>
-      <span>Stance</span>
-      <div class="seg"><button data-opt="stance" data-val="regular">Regular</button><button data-opt="stance" data-val="goofy">Goofy</button></div>
-      <span>Light</span>
-      <div class="seg"><button data-opt="time" data-val="golden">Golden hour</button><button data-opt="time" data-val="morning">Morning</button><button data-opt="time" data-val="dusk">Dusk</button></div>
-      <span></span><span id="approach">Backside left</span>
-    </div>
-    <p class="how">Ride it like a fingerboard. Rest two fingers together anywhere on the screen and slide them. <b>Up and down</b> carves up and down the face. <b>Toward where you are riding</b> puts weight on your front foot for speed. <b>Back</b> stalls. Slide back and up hard to snap. Rock up and down to pump. Keyboard: arrow keys, Shift to push harder.</p>
     <button id="go">Paddle out</button>
+    <p class="how">Ride it like a fingerboard. Rest two fingers anywhere and slide them. <b>Up and down</b> carves. <b>Toward where you are riding</b> is speed, <b>back</b> stalls, back and up hard snaps. Keyboard: arrows, Shift to push harder.</p>
   </div>
+  <div class="opts">
+    <span>Wave</span>
+    <div class="seg"><button data-opt="wave" data-val="left">Left</button><button data-opt="wave" data-val="right">Right</button></div>
+    <span>Stance</span>
+    <div class="seg"><button data-opt="stance" data-val="regular">Regular</button><button data-opt="stance" data-val="goofy">Goofy</button></div>
+    <span>Look</span>
+    <div class="seg"><button data-opt="look" data-val="retro">16-bit</button><button data-opt="look" data-val="smooth">Smooth</button></div>
+    <span>Light</span>
+    <div class="seg"><button data-opt="time" data-val="vice">Vice sunset</button><button data-opt="time" data-val="golden">Golden</button><button data-opt="time" data-val="morning">Morning</button><button data-opt="time" data-val="dusk">Dusk</button></div>
+    <span>Feel</span>
+    <label class="dial"><span>Loose</span><input id="feel" type="range" min="0" max="100" step="1" aria-label="Feel, loose to forgiving"><span>Forgiving</span></label>
+    <span>Reach</span>
+    <label class="dial"><span>Short</span><input id="reach" type="range" min="50" max="180" step="1" aria-label="Finger reach"><span>Long</span></label>
+    <span></span><button id="setupBtn" class="linkish">Set up my fingers</button>
+    <span></span><span id="approach">Backside left</span>
+  </div>
+</div>
+
+<div id="setup" hidden>
+  <div>
+    <h2 id="setupStep">Finger setup 1/2</h2>
+    <p id="setupText">Put your index and middle fingers down where they feel natural, like standing on a fingerboard.</p>
+    <div class="row"><button id="setupRedo">Start over</button><button id="setupDone" class="primary" hidden>Done</button><button id="setupSkip">Skip</button></div>
+  </div>
+  <div id="setupRing"></div>
+  <div id="setupDot"></div>
 </div>
 
 <div id="hud" hidden>
@@ -150,17 +196,17 @@
     <div id="padRing"></div>
     <div id="padBoard">
       <svg viewBox="0 0 104 30" width="104" height="30">
-        <path d="M3 15 C3 7 14 4 40 4 C70 4 92 7 101 15 C92 23 70 26 40 26 C14 26 3 23 3 15 Z" fill="#f3ece0" stroke="rgba(0,0,0,.35)" stroke-width="1"/>
-        <line x1="6" y1="15" x2="99" y2="15" stroke="#8a6a45" stroke-width="0.8"/>
-        <circle class="back" cx="26" cy="15" r="7" stroke="#1a1205" stroke-width="1"/>
-        <circle class="front" cx="64" cy="15" r="7" stroke="#1a1205" stroke-width="1"/>
+        <path d="M3 15 C3 7 14 4 40 4 C70 4 92 7 101 15 C92 23 70 26 40 26 C14 26 3 23 3 15 Z" fill="#fff6d5" stroke="rgba(0,0,0,.35)" stroke-width="1"/>
+        <line x1="6" y1="15" x2="99" y2="15" stroke="#0aa5a6" stroke-width="1.2"/>
+        <circle class="back" cx="26" cy="15" r="7" stroke="#1b0b3b" stroke-width="1"/>
+        <circle class="front" cx="64" cy="15" r="7" stroke="#1b0b3b" stroke-width="1"/>
       </svg>
     </div>
   </div>
 </div>
 <div id="fade"></div>
 <div id="debug" hidden></div>
-<div id="rotate">Turn your phone sideways</div>
+</div>
 
 <script type="module" src="src/main.js"></script>
 </body>

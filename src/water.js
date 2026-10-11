@@ -55,6 +55,9 @@ uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uTime;
 uniform float uFlow;
+uniform vec3 uDeep;
+uniform vec3 uBody;
+uniform vec3 uSss;
 
 vec3 skyLookup(vec3 r) {
   r.y = max(r.y, 0.0);
@@ -83,7 +86,7 @@ vec3 shadeWater(vec3 wp, vec3 N, vec3 T, vec2 uv, float flow, float trans, float
   vec3 R = reflect(-V, n);
   vec3 refl = skyLookup(R);
   // reflections that point into the water pick up the deep colour instead
-  refl = mix(refl, vec3(0.01, 0.04, 0.05), smoothstep(0.0, -0.25, R.y));
+  refl = mix(refl, uDeep * 2.0, smoothstep(0.0, -0.25, R.y));
 
   vec3 L = normalize(uSunDir);
   float ndl = max(dot(n, L), 0.0);
@@ -93,15 +96,15 @@ vec3 shadeWater(vec3 wp, vec3 N, vec3 T, vec2 uv, float flow, float trans, float
   vec3 skyAmb = (skyLookup(vec3(0.0, 1.0, 0.0)) * 0.6 + skyLookup(normalize(vec3(-L.x, 0.25, -L.z))) * 0.4);
   vec3 amb = skyAmb * (0.25 + 0.75 * facing * facing);
 
-  vec3 deep = vec3(0.003, 0.04, 0.045);
-  vec3 body = vec3(0.016, 0.15, 0.14);
+  vec3 deep = uDeep;
+  vec3 body = uBody;
   float th = clamp(trans, 0.0, 1.0);
   vec3 col = mix(deep, body, th) * (0.25 + 1.4 * amb + ndl * uSunColor * 0.15);
 
   // light through thin water: the backlit lip glows green-turquoise
   float back = pow(max(dot(V, -L), 0.0), 3.0);
   float wrapL = pow(clamp(dot(-n, L) * 0.5 + 0.5, 0.0, 1.0), 2.0);
-  vec3 sssCol = vec3(0.07, 0.55, 0.42);
+  vec3 sssCol = uSss;
   float thin = th * th;
   col += sssCol * uSunColor * (thin * (0.04 + back * 1.1 + wrapL * 0.35) + th * back * 0.12);
   col += sssCol * amb * th * 0.18;
@@ -140,6 +143,20 @@ vec3 applyFog(vec3 col, vec3 wp) {
 }
 `;
 
+// Water tints: natural green-blue, or the saturated pool turquoise of a Miami poster.
+const WATER = {
+  real: { deep: [0.003, 0.04, 0.045], body: [0.016, 0.15, 0.14], sss: [0.07, 0.55, 0.42] },
+  vice: { deep: [0.004, 0.02, 0.07], body: [0.01, 0.2, 0.26], sss: [0.05, 0.75, 0.7] },
+};
+function waterColors(name) {
+  const w = WATER[name];
+  return { uDeep: { value: new THREE.Vector3(...w.deep) }, uBody: { value: new THREE.Vector3(...w.body) }, uSss: { value: new THREE.Vector3(...w.sss) } };
+}
+export function setWaterColors(uniforms, name) {
+  const w = WATER[name] || WATER.real;
+  uniforms.uDeep.value.set(...w.deep); uniforms.uBody.value.set(...w.body); uniforms.uSss.value.set(...w.sss);
+}
+
 export function makeWaterUniforms({ env, normalMap, foamMap, sunDir, sunColor }) {
   return {
     uEnv: { value: env },
@@ -150,6 +167,7 @@ export function makeWaterUniforms({ env, normalMap, foamMap, sunDir, sunColor })
     uTime: { value: 0 },
     uFlow: { value: 0 },
     uSwell: { value: 1 },
+    ...waterColors('real'),
   };
 }
 

@@ -10,13 +10,6 @@ const FADE_SECONDS := 1.5
 const MOOD_ORDER: Array[String] = ["golden", "sunset", "neon"]
 const DEFAULT_MOOD := "sunset"
 
-## Colours that do not change with the mood (the surfer's gear and skin).
-const SUIT_PRIMARY := Color("#C6F135")
-const SUIT_SECONDARY := Color("#1B1730")
-const SUIT_ACCENT := Color("#FF3D8B")
-const SKIN := Color("#C98A5E")
-const BOARD := Color("#E8D8E0")
-
 const MOODS := {
 	"golden": {
 		"sky_top": "#7C86C8", "sky_violet": "#C09ACB", "sky_pink": "#F0B0A8", "sky_peach": "#FFCFA0",
@@ -26,7 +19,6 @@ const MOODS := {
 		"wave_shadow": "#123F4A", "wave_deep": "#1B6461", "wave_mid": "#2E8F78", "wave_light": "#4DBB8A",
 		"wave_glint": "#A8EBC0", "wave_rim": "#FFF0A0", "hollow_dark": "#123A55", "hollow_glow": "#7FE8B8",
 		"foam_lit": "#FFF8EA", "foam_shade": "#B7A4D0",
-		"surfer_shade": "#6A4F9A", "surfer_rim": "#FFE3A0",
 		"swell_top": "#2F8F96", "swell_deep": "#1C5F72", "swell_line": "#A8F0DC",
 		"glow": "#FFDDA0", "glow_strength": 0.36, "grade_top": "#A890C8", "grade_bottom": "#FFC27A",
 		"grade_strength": 0.06, "vignette": "#4A3A6A", "vignette_strength": 0.22, "grain_strength": 0.025,
@@ -40,7 +32,6 @@ const MOODS := {
 		"wave_shadow": "#0C2B4C", "wave_deep": "#135153", "wave_mid": "#1C776B", "wave_light": "#25A078",
 		"wave_glint": "#7FE3B8", "wave_rim": "#E8D27A", "hollow_dark": "#14214A", "hollow_glow": "#3CC9A0",
 		"foam_lit": "#FDE9DE", "foam_shade": "#606296",
-		"surfer_shade": "#4B2A7A", "surfer_rim": "#F6C98A",
 		"swell_top": "#256E7D", "swell_deep": "#14485A", "swell_line": "#59D5C1",
 		"glow": "#F08A70", "glow_strength": 0.28, "grade_top": "#6B3380", "grade_bottom": "#E8836F",
 		"grade_strength": 0.07, "vignette": "#290756", "vignette_strength": 0.35, "grain_strength": 0.03,
@@ -54,7 +45,6 @@ const MOODS := {
 		"wave_shadow": "#0A1044", "wave_deep": "#0A4F7A", "wave_mid": "#0FA3A3", "wave_light": "#2BE0B0",
 		"wave_glint": "#9CFFE0", "wave_rim": "#FF8FD0", "hollow_dark": "#080430", "hollow_glow": "#2FE8E8",
 		"foam_lit": "#FFE8F6", "foam_shade": "#8C6CFF",
-		"surfer_shade": "#3A1C9A", "surfer_rim": "#FF9AD8",
 		"swell_top": "#0E7FB0", "swell_deep": "#0B1E70", "swell_line": "#FF4FA0",
 		"glow": "#FF4FA0", "glow_strength": 0.45, "grade_top": "#5B2BD0", "grade_bottom": "#FF3D8B",
 		"grade_strength": 0.12, "vignette": "#0A0626", "vignette_strength": 0.5, "grain_strength": 0.04,

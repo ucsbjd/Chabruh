@@ -54,18 +54,18 @@ func _build() -> void:
 	_background = ColorRect.new()
 	_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_background)
-	for pose_name in PoseLibrary.ORDER:
+	for pose_name in SurferSprites.ORDER:
 		var cell := ColorRect.new()
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(cell)
 		_cells.append(cell)
 		var surfer := Surfer.new()
-		surfer.set_pose(pose_name, 0.0)
+		surfer.set_pose(pose_name)
 		add_child(surfer)
 		_surfers.append(surfer)
-		_labels.append(_add_label(PoseLibrary.LABELS[pose_name], 15))
+		_labels.append(_add_label(SurferSprites.LABELS[pose_name], 15))
 	_cycler = Surfer.new()
-	_cycler.set_pose(PoseLibrary.ORDER[0], 0.0)
+	_cycler.set_pose(SurferSprites.ORDER[0])
 	add_child(_cycler)
 	_cycler_label = _add_label("", 22)
 	# Looked up by path, not by name: the test runner compiles this script before autoloads exist.
@@ -100,15 +100,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _step(direction: int) -> void:
-	_cycler_index = posmod(_cycler_index + direction, PoseLibrary.ORDER.size())
+	_cycler_index = posmod(_cycler_index + direction, SurferSprites.ORDER.size())
 	_timer = 0.0
 	_show_cycler_pose()
 
 
 func _show_cycler_pose() -> void:
-	var pose_name: String = PoseLibrary.ORDER[_cycler_index]
+	var pose_name: String = SurferSprites.ORDER[_cycler_index]
 	_cycler.set_pose(pose_name)
-	_cycler_label.text = PoseLibrary.LABELS[pose_name]
+	_cycler_label.text = SurferSprites.LABELS[pose_name]
 
 
 func _layout() -> void:

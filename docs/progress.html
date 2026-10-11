@@ -267,19 +267,19 @@ const STEPS = [
     ]
   },  {
     n: 4, status: "todo",
-    title: "The surfer and pose library",
-    goal: "A flat-shaded 80s surfer who can hit the athletic poses from the storyboard and blend smoothly between them.",
+    title: "The surfer: sprites from real motion",
+    goal: "An athletic 80s surfer who looks like the key frames, made from real surfing motion, with a pipeline for adding more animations later.",
     build: [
-      "A jointed paper-doll rig made of flat Polygon2D shapes, chunky and athletic like the Kling back-view reference sheets: a lime top with a pink chevron across the back and pink cuffs, ink capri pants with pink side stripes, bare forearms, shins and feet, and a cream board with a pink and aqua graphic. Violet shade on the side away from the sun and a warm rim on the side toward it, both fed from the mood so a fade redraws nothing. Regular stance (left foot forward), travelling right to left, seen from behind and slightly to the side. It replaces the scale-marker surfer from step 3.",
-      "A pose library stored as data (one GDScript table of joint angles and offsets): walk-in with board, prone paddle, pop-up, trim, bottom turn, top turn, cutback, barrel crouch with hand-drag, air, floater, soft wipeout tumble. Legs are solved from where each ankle should stand, so feet stay glued to the board in every pose and mid-blend.",
-      "Smooth blending between poses (0.15 s), the board tilting with the pose and with the wave's slope under it, and a small idle sway.",
-      "A pose gallery reachable with ?gallery on the URL: every pose in a labelled grid against the wave's colours, plus a big cycler you step through by tap or the left and right keys. Also ?pose=name and the P key set the pose in the main scene (temporary until step 5)."
+      "A jointed 2D rig and several image-generation routes were tried and dropped (stiff, or the style drifted between images). What works: capture a continuous shot of real surfing footage, make a motion clip, and run Kling motion control so an original character (bare tanned torso, bright pink-aqua-yellow 80s board shorts, rainbow shortboard) performs that motion on a flat background. The frames are keyed out, registered on the board and added as sprites.",
+      "One working animation, ride (35 frames at 12 fps, ping-pong loop), in the game on the step 3 wave: the board's centre sits on the surfer's place on the face, the surfer is 1.8 m tall on screen and tilts with the wave's slope. The old rig and pose tables are gone.",
+      "A reusable pipeline in tools/sprites (capture snippet, clip maker, extractor) with every step, command, cost and lesson written down in docs/sprite-pipeline.md, so more animations (cutback, bottom turn, top turn, air, barrel crouch, wipeout, paddle, pop-up) are a recipe, not research.",
+      "?gallery shows every animation in a grid plus a cycler; ?pose=ride and the P key choose the animation in the main scene (temporary until step 6)."
     ],
-    notNow: ["Riding the wave, controls, spray."],
+    notNow: ["More animations (they come as later steps need them), riding the wave, controls, spray."],
     verify: [
-      "The gallery next to the storyboard photos and the Kling pose sheets: each pose reads as the right athletic move at a glance, silhouette first. Try ?gallery, and ?pose=top_turn or ?pose=barrel (with ?size=0.9&hollow=1&peel=1) on the wave.",
-      "Blending between any two poses is smooth, with no limb popping or detaching.",
-      "The surfer looks good against the step 3 wave (contrast, shadow colour, scale)."
+      "The surfer in the main scene looks like a real, athletic surfer in the key-frame world: bright 80s shorts and board, readable against the jade wave, about a quarter of the screen high. Try ?size=0.9&hollow=1&peel=1 for the barrel.",
+      "The ride animation loops without a visible jump, and the board stays put on the wave while the body moves.",
+      "docs/sprite-pipeline.md is clear enough that another animation could be added from it alone."
     ]
   },
   {
@@ -396,9 +396,7 @@ const REFERENCES = [
   ["wave1.webp", "Heavy wave, foam lace"],
   ["kling/kling-04-top-turn-spray-fan-a.png", "Key frame A"],
   ["kling/kling-05-top-turn-spray-fan-b.png", "Key frame B"],
-  ["kling/pose-sheet-01-core-poses.png", "Pose sheet: ride (from behind)"],
-  ["kling/pose-sheet-03-air-floater-paddle-walk-wipeout.png", "Pose sheet: pop-up, walk, wipeout"],
-  ["kling/pose-sheet-04-air-floater-paddle.png", "Pose sheet: air, floater, paddle"],
+  ["kling/sprite-test-o1-cutback-v2a.png", "Still sprite test (cutback)"],
 ];
 
 // ---- Prompt builders -------------------------------------------------------

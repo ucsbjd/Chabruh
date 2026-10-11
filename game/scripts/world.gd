@@ -29,7 +29,7 @@ const PEEL_RATE := 8.0
 const DEFAULT_SIZE := 0.6
 const DEFAULT_HOLLOW := 0.5
 const DEFAULT_PEEL_OFFSET := 3.0
-const DEFAULT_POSE := "trim"
+const DEFAULT_POSE := "ride"
 ## The surfer sits on the face at an angle that follows the wave, but never tips past this, in degrees.
 const MAX_GROUND_ANGLE := 14.0
 
@@ -41,7 +41,7 @@ var _crop := 0.0   # screen heights hidden on each side when the screen is narro
 var peel_offset := DEFAULT_PEEL_OFFSET
 var _swing := 0.0   # 0 behind the surfer, 1 swung round to the barrel side
 var _first_frame := true
-var _pose_index := PoseLibrary.ORDER.find(DEFAULT_POSE)
+var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 
 var _ridges: Array[RidgeLayer] = []
 ## Each shader material with the mood properties it declares as uniforms.
@@ -70,7 +70,7 @@ func _ready() -> void:
 	_apply_mood()
 	set_wave(_url_number("size", DEFAULT_SIZE), _url_number("hollow", DEFAULT_HOLLOW), _url_number("peel", DEFAULT_PEEL_OFFSET))
 	var requested_pose := UrlParams.get_value("pose")
-	set_surfer_pose(requested_pose if PoseLibrary.has_pose(requested_pose) else DEFAULT_POSE, 0.0)
+	set_surfer_pose(requested_pose if SurferSprites.has_animation(requested_pose) else DEFAULT_POSE)
 
 
 func _process(delta: float) -> void:
@@ -92,7 +92,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
 		elif event.pressed and not event.echo and event.keycode == KEY_P:
-			set_surfer_pose(PoseLibrary.ORDER[(_pose_index + 1) % PoseLibrary.ORDER.size()])
+			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
 	# Touches arrive as emulated mouse clicks, so this one branch covers phone and desktop.
 	elif event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -109,10 +109,10 @@ func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void
 	_panel.show_values(wave_size, hollowness, peel_offset)
 
 
-## Eases the surfer into a pose from PoseLibrary (temporary: step 5 picks poses from how they ride).
-func set_surfer_pose(pose_name: String, seconds := Surfer.BLEND_SECONDS) -> void:
-	_pose_index = maxi(PoseLibrary.ORDER.find(pose_name), 0)
-	_surfer.set_pose(pose_name, seconds)
+## Plays one of the surfer's animations from SurferSprites (temporary: step 6 picks them from how they ride).
+func set_surfer_pose(pose_name: String) -> void:
+	_pose_index = maxi(SurferSprites.ORDER.find(pose_name), 0)
+	_surfer.set_pose(pose_name)
 
 
 ## Frames the camera on the surfer and stands the surfer and the spray cloud on the wave.

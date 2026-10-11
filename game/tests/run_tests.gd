@@ -21,7 +21,7 @@ func _initialize() -> void:
 	_test_wave_section()
 	_test_wave_mesh()
 	_test_noise_textures()
-	_test_pose_library()
+	_test_surfer_sprites()
 	_test_surfer()
 	_test_tuning()
 	await _test_world()
@@ -203,75 +203,46 @@ func _test_noise_textures() -> void:
 	_check(darkest < 0.05 and brightest > 0.9, "the cell texture spans dark edges to bright centres")
 
 
-## Poses the surfer rides in, with both feet on the board.
-const RIDING_POSES: Array[String] = ["pop_up", "trim", "bottom_turn", "top_turn", "cutback", "barrel", "air", "floater", "paddle"]
-
-
-func _test_pose_library() -> void:
-	_check(PoseLibrary.ORDER.size() == PoseLibrary.POSES.size(), "the gallery order lists every pose")
-	var complete_and_known := true
+func _test_surfer_sprites() -> void:
+	_check(SurferSprites.ORDER.size() == SurferSprites.ANIMATIONS.size(), "the gallery order lists every animation")
 	var labelled := true
-	for pose_name in PoseLibrary.ORDER:
-		labelled = labelled and PoseLibrary.LABELS.has(pose_name) and PoseLibrary.has_pose(pose_name)
-		for key: String in PoseLibrary.POSES[pose_name]:
-			complete_and_known = complete_and_known and PoseLibrary.DEFAULT.has(key)
-		complete_and_known = complete_and_known and PoseLibrary.complete(pose_name).size() == PoseLibrary.DEFAULT.size()
-	_check(complete_and_known, "every pose fills in every joint and names no unknown joint")
-	_check(labelled, "every pose has a label")
-	var distinct := true
-	for a in PoseLibrary.ORDER:
-		for b in PoseLibrary.ORDER:
-			distinct = distinct and (a == b or PoseLibrary.complete(a) != PoseLibrary.complete(b))
-	_check(distinct, "no two poses are the same")
-	_check(PoseLibrary.complete("nonsense") == PoseLibrary.DEFAULT, "an unknown pose name gives the default pose")
+	var found := true
+	var sized := true
+	var on_anchor := true
+	var visible_figure := true
+	for animation_name in SurferSprites.ORDER:
+		labelled = labelled and SurferSprites.LABELS.has(animation_name) and SurferSprites.has_animation(animation_name)
+		for i: int in SurferSprites.ANIMATIONS[animation_name].frames:
+			var texture := load(SurferSprites.frame_path(animation_name, i)) as Texture2D
+			found = found and texture != null
+			if texture == null:
+				continue
+			sized = sized and Vector2(texture.get_size()) == SurferSprites.FRAME_SIZE
+			# The pipeline puts every frame's board on the anchor, so the lowest solid pixel is at the anchor's row.
+			var used := texture.get_image().get_used_rect()
+			on_anchor = on_anchor and absf((used.position.y + used.size.y) - SurferSprites.ANCHOR.y) < 14.0
+			visible_figure = visible_figure and used.size.y > SurferSprites.FRAME_SIZE.y * 0.3
+	_check(labelled, "every animation has a label")
+	_check(found, "every frame of every animation exists")
+	_check(sized, "every frame is the catalog's frame size")
+	_check(on_anchor, "the board sits on the anchor in every frame, so the surfer cannot slide about")
+	_check(visible_figure, "every frame has a surfer in it, not an empty picture")
+	_check(SurferSprites.ANCHOR.x > 0.0 and SurferSprites.ANCHOR.x < SurferSprites.FRAME_SIZE.x and SurferSprites.ANCHOR.y < SurferSprites.FRAME_SIZE.y, "the anchor is inside the frame")
+	_check(SurferSprites.person_pixels() < SurferSprites.FRAME_SIZE.y, "a 1.8 m person is a little shorter than the frame")
 
 
 func _test_surfer() -> void:
 	var surfer := Surfer.new()
 	surfer.place(Vector2(640.0, 500.0), 180.0)
-	_check(surfer.position == Vector2(640.0, 500.0), "the surfer's feet go where they are put")
+	_check(surfer.position == Vector2(640.0, 500.0), "the board goes where it is put")
 	_check(is_equal_approx(surfer.scale.y * Surfer.STANDING_HEIGHT, 180.0), "the surfer is as tall as asked")
-
-	surfer.set_pose("nonsense", 0.0)
-	_check(surfer.pose_name() == "trim", "an unknown pose name changes nothing")
-
-	var on_board := true
-	var reach := true
-	for pose_name in RIDING_POSES:
-		surfer.set_pose(pose_name, 0.0)
-		var values := PoseLibrary.complete(pose_name)
-		for side in ["l", "r"]:
-			var target := Vector2(values["foot_%s_x" % side], values["foot_%s_y" % side])
-			var ankle := surfer.ankle_on_board(side)
-			reach = reach and ankle.distance_to(target) < 0.02
-			on_board = on_board and absf(ankle.x) < Surfer.BOARD_HALF and absf(ankle.y) < 0.2
-	_check(reach, "in every riding pose each ankle reaches the spot it is asked to stand on")
-	_check(on_board, "in every riding pose both feet stand on the board")
-
-	# Blend from one pose to another a step at a time: the feet stay on the board, and nothing jumps.
-	surfer.set_pose("trim", 0.0)
-	surfer.set_pose("top_turn", Surfer.BLEND_SECONDS)
-	var smooth := true
-	var feet_kept := true
-	var last := {"l": surfer.ankle_on_board("l"), "r": surfer.ankle_on_board("r")}
-	for step in 30:
-		surfer._process(0.01)
-		for side in ["l", "r"]:
-			var ankle := surfer.ankle_on_board(side)
-			smooth = smooth and ankle.distance_to(last[side]) < 0.05
-			feet_kept = feet_kept and absf(ankle.x) < Surfer.BOARD_HALF and absf(ankle.y) < 0.2
-			last[side] = ankle
-	_check(smooth, "blending between poses moves the feet smoothly, with no jumps")
-	_check(feet_kept, "the feet stay on the board for the whole blend")
-	var values := PoseLibrary.complete("top_turn")
-	_check(absf(surfer.board_transform().get_rotation() - deg_to_rad(values.board_rot)) < deg_to_rad(1.0), "the board ends tilted to the pose (give or take the idle sway)")
-
-	surfer.set_pose("air", 0.0)
-	var air_height := surfer.board_transform().origin.y
-	surfer.set_pose("trim", 0.0)
-	_check(air_height > surfer.board_transform().origin.y, "the board sits lower in the air than on the wave")
-
-	_check(surfer.materials().size() == 2, "the surfer's light uses two materials, so a mood fade redraws nothing")
+	_check(surfer.pose_name() == SurferSprites.ORDER[0], "the surfer starts in the first animation")
+	surfer.set_pose("nonsense")
+	_check(surfer.pose_name() == SurferSprites.ORDER[0], "an unknown animation name changes nothing")
+	var info: Dictionary = SurferSprites.ANIMATIONS[SurferSprites.ORDER[0]]
+	_check(surfer.frame_count() == (info.frames * 2 - 2 if info.ping_pong else info.frames), "a ping-pong animation plays forward and back without repeating its ends")
+	surfer.set_ground_angle(10.0)
+	_check(is_equal_approx(surfer.rotation_degrees, 10.0), "the surfer tilts to sit on a sloping face")
 	surfer.free()
 
 
@@ -297,9 +268,8 @@ func _test_world() -> void:
 	_check(surfer.position.is_equal_approx(feet_px), "the surfer stands on the face in the running scene")
 	_check(is_equal_approx(surfer.scale.y * Surfer.STANDING_HEIGHT, feet_px.y - stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0)).y), "the surfer is the standard 1.8 m tall on screen")
 	_check(absf(rad_to_deg(surfer.rotation)) <= world.MAX_GROUND_ANGLE, "the surfer tilts with the face, but never past the limit")
-	world.set_surfer_pose("top_turn", 0.0)
-	_check(surfer.pose_name() == "top_turn", "the scene can switch the surfer's pose")
-	_check(surfer.materials()[0].get_shader_parameter("surfer_shade") == mood.surfer_shade and surfer.materials()[1].get_shader_parameter("surfer_rim") == mood.surfer_rim, "the surfer is fed the mood's shade and rim colours")
+	world.set_surfer_pose("nonsense")
+	_check(surfer.pose_name() == SurferSprites.ORDER[0], "the scene ignores an animation name that does not exist")
 	var gallery: PoseGallery = world.get_node("PoseGallery")
 	_check(not gallery.visible, "the pose gallery stays hidden unless asked for")
 	gallery.open()
@@ -307,7 +277,7 @@ func _test_world() -> void:
 	var surfers := 0
 	for child in gallery.get_children():
 		surfers += int(child is Surfer)
-	_check(gallery.visible and surfers == PoseLibrary.ORDER.size() + 1, "the gallery shows every pose plus a cycler")
+	_check(gallery.visible and surfers == SurferSprites.ORDER.size() + 1, "the gallery shows every animation plus a cycler")
 	gallery.close()
 	_check(absf(feet_px.y / world.size.y - WaveStage.SURFER_SCREEN_Y) < 0.01, "the camera puts the surfer's feet at the planned height on screen")
 	var head_px := stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))

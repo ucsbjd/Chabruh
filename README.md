@@ -24,7 +24,7 @@ Run these from the repo root in PowerShell.
 | Play it at http://localhost:8060 | `.\tools\serve.ps1` |
 | Deploy a temporary preview link | `.\tools\preview.ps1 -Step 1` |
 | Open the editor | `godot --path game --editor` |
-| Save a true-colour screenshot | `.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 3 -Mood sunset -Pose trim` |
+| Save a true-colour screenshot | `.\tools\capture.ps1 -Out shot.png -Size 0.6 -Hollow 0.5 -Peel 3 -Mood sunset -Pose ride` |
 | Save the pose gallery | `.\tools\capture.ps1 -Out gallery.png -Gallery -Resolution 1920x1080` |
 | Measure the frame time (vsync off) | `.\tools\capture.ps1 -Out shot.png -Perf -Frames 240 -Resolution 1920x1080` |
 
@@ -34,11 +34,11 @@ Run these from the repo root in PowerShell.
 - **Arrow keys**: up and down change the size, left and right slide the surfer along the wave. **`[` and `]`** change hollowness. **R** resets.
 - **`?size=0.8&hollow=1&peel=-1`** on the URL start the wave in that state (size and hollow from 0 to 1, peel in meters from -10 to 20).
 
-## Surfer poses (temporary until step 5)
+## Surfer animations (temporary until step 6)
 
-- **`?gallery`** on the URL: every pose in a labelled grid against the wave's colours, plus a big cycler. Tap or click, or use the left and right arrow keys, to step through; space pauses.
-- **`?pose=top_turn`** on the URL starts the surfer in a pose, and **P** steps through them in the main scene. The poses are walk_in, paddle, pop_up, trim, bottom_turn, top_turn, cutback, barrel, air, floater and wipeout.
-- Try the barrel with **`?size=0.9&hollow=1&peel=1&pose=barrel`**.
+- **`?gallery`** on the URL: every animation in a labelled grid against the wave's colours, plus a big cycler. Tap or click, or use the left and right arrow keys, to step through; space pauses.
+- **`?pose=ride`** on the URL starts the surfer in an animation, and **P** steps through them in the main scene. There is one so far, `ride`.
+- Try the barrel with **`?size=0.9&hollow=1&peel=1`**. New animations are made with the pipeline in `docs/sprite-pipeline.md`.
 
 ## Look controls (temporary)
 

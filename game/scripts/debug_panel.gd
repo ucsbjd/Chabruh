@@ -1,7 +1,7 @@
 class_name DebugPanel
 extends PanelContainer
 ## Temporary sliders for trying the wave out, usable with a mouse or a finger. Shown with ?debug
-## in the URL or the D key. Step 5 replaces this with the real tuning panel.
+## in the URL or the D key. Step 6 replaces this with the real tuning panel.
 
 signal values_changed(size: float, hollowness: float, peel_offset: float)
 

@@ -28,7 +28,7 @@ Run these from the repo root in PowerShell.
 | Save the pose gallery | `.\tools\capture.ps1 -Out gallery.png -Gallery -Resolution 1920x1080` |
 | Measure the frame time (vsync off) | `.\tools\capture.ps1 -Out shot.png -Perf -Frames 240 -Resolution 1920x1080` |
 
-## Wave controls (temporary, until steering arrives in step 5)
+## Wave controls (temporary, until steering arrives in step 6)
 
 - **Sliders** for size, hollow and peel: add **`?debug`** to the URL or press **D**. They work with a finger. *Size* is how big the wave is, *hollow* goes from a spilling wave to a barrel, and *peel* slides the surfer along the wave, in meters ahead of the break (high is far ahead on the open shoulder, near zero or negative lets the break catch up and puts them under the lip, where a hollow wave has its barrel).
 - **Arrow keys**: up and down change the size, left and right slide the surfer along the wave. **`[` and `]`** change hollowness. **R** resets.

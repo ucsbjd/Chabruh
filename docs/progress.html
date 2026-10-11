@@ -266,7 +266,7 @@ const STEPS = [
       "Claude reports measured frame times and the download size."
     ]
   },  {
-    n: 4, status: "todo",
+    n: 4, status: "done",
     title: "The surfer: sprites from real motion",
     goal: "An athletic 80s surfer who looks like the key frames, made from real surfing motion, with a pipeline for adding more animations later.",
     build: [
@@ -284,41 +284,41 @@ const STEPS = [
   },
   {
     n: 5, status: "todo",
-    title: "Riding and feel",
-    goal: "Catch a wave and ride it. It should feel good in the hand before any effects are added.",
+    title: "The wave in motion and spray",
+    goal: "The wave is alive before anyone steers: the face flows up, the lip throws and crashes toward the surfer, the whitewater boils, and spray flies like the storyboard photos.",
     build: [
-      "Surfer states: paddle, automatic pop-up, ride, soft wipeout, drift back. The pose follows the motion (low and turning up is a bottom turn, high and turning down is a top turn, flat and fast is trim).",
-      "Motion model on top of the step 3 WaveModel: the surfer's distance to the peel point and height up the face (the model gives the slope), speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
-      "Input: mouse X plus the wheel on desktop, arrow keys / WASD as a fallback, two-finger drag on mobile (horizontal steers, vertical changes height). The wheel and touch must never scroll or zoom the page.",
-      "A camera that follows the surfer smoothly.",
-      "A tuning resource with Feel (dead zone, response curve) and Reach dials, and a small hidden tuning panel (backtick key or triple-tap)."
+      "The face flows: the veins, streaks and foam lace on the wave's face scroll up toward the crest, and the sea slides past, so the water looks like it is being drawn up the wave. Do it in the wave shader (scrolling the face's texture coordinates), not by rebuilding the mesh.",
+      "The lip throws and crashes: a repeating cycle along the crest where the lip lifts, throws out over the trough and falls toward the surfer's side, with foam churning and dripping down the face behind it and the whitewater boiling and rolling away behind the peel point. The model decides where the break is; animate the shape in the vertex shader as a function of distance and time (a mesh rebuild costs about 15 ms, so never rebuild every frame). At high hollowness the throw is a big barrel curtain, at low a spilling tumble.",
+      "Spray from the wave: a lip spit at the curl, mist off the crest, sunlit white and peach on the lit side and violet in shade, droplet sparkle catching the sun, with layers in front of and behind the surfer for depth.",
+      "Surfer spray, ready to be driven by riding: a top-turn spray fan (a wide radial arc thrown off the tail, much bigger than the surfer, fine droplets at the edge), smaller carve spray, a foam wake behind the board, and an air splash. Expose one simple call, such as burst(strength), and a temporary key (S) that fires fans of increasing strength so they can be judged now; step 6 will connect strength to speed times how sharp the turn is.",
+      "CPUParticles2D and/or procedurally drawn fans and shader mist, kept cheap enough for mobile. Measure frame times at 720p, 1080p and 1440p and report particle counts."
     ],
-    notNow: ["Spray, sound, sets of waves."],
+    notNow: ["Riding and controls, sound, the sets of waves, the tube moment."],
     verify: [
-      "Mouse X plus wheel on desktop, and two-finger drag on my phone, both feel smooth, and nothing scrolls or zooms.",
-      "I can chain a bottom turn into a top turn and the pose follows.",
-      "Drifting too far back gives a gentle wipeout and I am paddling again within a few seconds. No text or score appears.",
-      "Frame rate holds on my phone."
+      "The wave looks like it is breaking, not like a still shape: the face moves up, the lip throws and falls, foam churns, the whitewater rolls. It looks right at small, default and big hollow sizes, in all three moods.",
+      "Pressing S gives a spray fan that echoes images (4), (5), (6) and (9) and the Kling key frames; a gentle burst stays subtle. A still screenshot shows the fan shape, not random dots.",
+      "The surfer still sits on the face and the spray layers in front of and behind them look right.",
+      "No frame drops on my phone (use ?fps), the console stays clean, and Claude reports frame times, particle counts and the download size."
     ]
   },
   {
     n: 6, status: "todo",
-    title: "Spray and water effects",
-    goal: "The signature of the game: big, dynamic spray like the storyboard photos.",
+    title: "Riding and feel",
+    goal: "Catch a wave and ride it. It should feel good in the hand with the moving wave and the spray already there.",
     build: [
-      "Top-turn spray fan: a wide radial arc thrown off the tail, much bigger than the surfer, with fine droplets at the edge, sunlit white and peach on the lit side and violet in shade. Size scales with speed times how sharp the turn is.",
-      "Smaller carve spray on every turn, a foam wake behind the board, tail mist, and a lip spit near the curl.",
-      "Air: spray on take-off, a hang-time moment, a splash on landing.",
-      "Droplet sparkle catching the sun, with layers in front of and behind the surfer for depth.",
-      "The wave itself breaks: in step 3 only the sea moves and the wave's shape is fixed, so here the lip visibly throws and falls, foam churns and drips down the face, the whitewater boils behind the peel point, and the crest ripples. Animate it in the shader, or by rebuilding the mesh only a few times a second (a rebuild costs about 15 ms).",
-      "CPUParticles2D and/or procedurally drawn fans, kept cheap enough for mobile."
+      "Surfer states: paddle, automatic pop-up, ride, soft wipeout, drift back. The animation follows the motion (low and turning up is a bottom turn, high and turning down is a top turn, flat and fast is trim). Only the ride animation exists so far: make the others with the sprite pipeline in docs/sprite-pipeline.md (cutback, bottom turn, top turn, wipeout, paddle, pop-up) and ask me before any Kling video call, because motion control costs about 8 credits per second. Add the short cross-dissolve between animations.",
+      "Motion model on top of the step 3 WaveModel: the surfer's distance to the peel point and height up the face (the model gives the slope), speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
+      "Connect the step 5 spray to the riding: fan size from speed times how sharp the turn is, wake from speed.",
+      "Input: mouse X plus the wheel on desktop, arrow keys / WASD as a fallback, two-finger drag on mobile (horizontal steers, vertical changes height). The wheel and touch must never scroll or zoom the page.",
+      "A camera that follows the surfer smoothly.",
+      "A tuning resource with Feel (dead zone, response curve) and Reach dials, and a small hidden tuning panel (backtick key or triple-tap) that replaces the temporary size, hollow and peel sliders."
     ],
-    notNow: ["Sound, the tube."],
+    notNow: ["Sound, sets of waves, the tube moment."],
     verify: [
-      "A hard snap at the top produces a fan that echoes images (4), (5), (6) and (9). A gentle carve stays subtle.",
-      "A still screenshot shows the fan shape, not random dots.",
-      "The wave looks like it is breaking, not like a still shape: the lip falls, foam churns, the whitewater moves.",
-      "No frame drops on my phone, and Claude reports the particle counts."
+      "Mouse X plus wheel on desktop, and two-finger drag on my phone, both feel smooth, and nothing scrolls or zooms.",
+      "I can chain a bottom turn into a top turn, the animation follows, and a hard snap throws a big spray fan while a gentle carve stays subtle.",
+      "Drifting too far back gives a gentle wipeout and I am paddling again within a few seconds. No text or score appears.",
+      "Frame rate holds on my phone."
     ]
   },
   {

@@ -252,14 +252,14 @@ const STEPS = [
     build: [
       "WaveModel (GDScript, no drawing): inputs are size, hollowness (spilling to plunging) and peel speed. Every shape is a function of the distance to the peel point, so the wall builds, the lip throws on a ballistic arc, the barrel opens, then collapses into whitewater.",
       "A surface API for gameplay: face height, slope and surface point at a position and a height up the face, plus the zone you are in (shoulder, pocket, barrel, whitewater). Unit-tested, including how size and hollowness scale.",
-      "Wave v2, drawn by a shader from the model: a much bigger concave face, a teardrop barrel with a thick lip curtain whose underside is white with air, fine veins running up the face, foam lace on the whitewater, and mist feathering off the crest in the wind. Detail textures are generated at load, so the download stays small.",
+      "Wave v2, drawn by a shader from the model in the style of key frames kling-04 and kling-05: flat jade bands with a thin warm rim line along the crest, fine vertical streaks and pale cell-edge veins, cream foam with violet shade, a stippled mist cloud at the lip, and a crest line that recedes down the line. At high hollowness a teardrop barrel with a thin crescent lip appears (kling-03). Detail textures are generated at load, so the download stays small.",
       "Size scaling: a small wave spills, a big wave plunges into a barrel. Temporary keys (and ?size= and ?hollow= in the URL) change size and hollowness, and other keys slide the peel point so you can watch the barrel catch up with the surfer or fall behind.",
-      "A simple scale-marker surfer, a few flat shapes and not the final art, standing on the face at the model's surface point so we can judge size. Step 4 replaces it.",
+      "A simple scale-marker surfer, a few flat shapes seen from behind with arms wide and not the final art, standing on the face at the model's surface point. It is about 0.26 of the screen high and the default wave face about 1.7 times that, as in the key frames. Step 4 replaces it.",
       "Performance: measure with the desktop --print-fps runs at 720p, 1080p and 1440p, and add a reduced-resolution option if the wave is too heavy for a phone."
     ],
     notNow: ["The final surfer art and poses, controls, spray particles, sound."],
     verify: [
-      "Next to barrel.jpg and wave1.webp: the wave dwarfs the surfer, with a concave face, a teardrop barrel, a thick lip with a white underside, face veins, foam lace and crest mist.",
+      "Next to kling-04 and kling-05: flat jade bands, a thin warm rim line on the crest, a big surfer against a wave about 1.7 times their height, a wall that recedes down the line, and a stippled mist cloud at the lip. Turning hollowness up gives a barrel like kling-03.",
       "Growing and shrinking the wave changes its character: small is a spilling slope, big throws a barrel.",
       "Sliding the peel point moves the barrel over the scale-marker surfer, or away from them, and the surfer stays on the face.",
       "Still smooth on my phone (use ?fps), and the console stays clean while I change size.",
@@ -391,7 +391,7 @@ const REFERENCES = [
   ["licensed-image.jpg", "Glassy barrel"],
   ["licensed-image (1).jpg", "Tube, hand-drag"],
   ["barrel.jpg", "Real barrel, scale"],
-  ["wave1.webp", "Heavy wave, foam lace"]
+  ["wave1.webp", "Heavy wave, foam lace"],
 ];
 
 // ---- Prompt builders -------------------------------------------------------
@@ -537,7 +537,7 @@ function render() {
   document.getElementById("steps").replaceChildren(...STEPS.map((s) => renderStep(s, nextN)));
 
   document.getElementById("gallery").replaceChildren(...REFERENCES.map(([file, caption]) => {
-    const img = h("img", { src: "../storyboardimages/" + encodeURIComponent(file), alt: caption, loading: "lazy" });
+    const img = h("img", { src: "../storyboardimages/" + file.split("/").map(encodeURIComponent).join("/"), alt: caption, loading: "lazy" });
     img.addEventListener("error", () => img.remove());
     return h("figure", {}, img, h("figcaption", {}, caption));
   }));

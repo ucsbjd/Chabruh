@@ -30,21 +30,31 @@ Look: **Over the Hill meets 80s Miami sunset, in 2D.** Reference screenshots liv
 
 80s layer: sunset gradient sky (violet, hot pink, peach, pale gold), striped sun, palm and headland silhouettes, pastel art-deco accents, neon colour-blocked wetsuits and bold board graphics, a light film-grain/VHS touch, synth-wave music. See `storyboardimages/images.jpg` for the palette mood.
 
-Starting palette (a first guess, tune freely, but keep it in one place, the `Palette` autoload):
+Starting palette, sampled from the key frames (tune freely, but keep it in one place, the `Palette` autoload):
 
 | Role | Colours |
 | --- | --- |
-| Sky, top to horizon | `#2B1B5E` `#7B3FA0` `#E8559A` `#FF9A6B` `#FFD79A` |
-| Sun | `#FFE3A3` with `#FF7A8A` stripes |
-| Wave face, light to deep | `#7AF2E0` (light through the lip) `#19C9C0` `#0B7C8C` `#25306B` (shadow) |
-| Foam and spray | `#FFF4E6` lit, `#C7A8E0` in shade |
+| Sky, top to horizon | `#290756` `#6B3380` `#B45984` `#E8836F` `#F0A878` |
+| Sun | `#EBA565` at the top to `#E56F80` at the bottom, with violet `#873F82` gaps between the bars |
+| Wave face, light to deep | jade `#25A078`, `#1C776B`, `#135153`, navy `#0C2B4C` at the base; warm rim line `#E8D27A` along the crest |
+| Foam and spray | cream `#FDE9DE` lit, violet `#606296` in shade; aqua sea lines `#59D5C1` |
 | Neon gear | lime `#C6F135`, pink `#FF3D8B`, ink `#1B1730` |
+
+### The key frames: `storyboardimages/kling/kling-04` (fan A) and `kling-05` (fan B)
+
+The user picked these two AI-generated style frames as **the look that drives every decision**. Judge every visual against them first. The other frames in that folder are secondary: `kling-03` (big barrel C) is the best reference for the barrel and for the wall running down the line, `kling-10` (tube view) is for the tube moment, `kling-06` (small spilling wave) is for small waves. `kling-08` and `kling-09` are misses on the details; ignore them.
+
+- **Flat vector illustration, almost no shading.** The face is 3 or 4 big flat jade bands (light at the top, deep at the base), softly edged, with a thin warm yellow-cream **rim line along the crest**. Optional detail: fine vertical dark streaks and a pale cell-edge network (thin lilac lines forming big polygons) like fan A's lower left.
+- **Spray is the hero.** A spiky cream burst at the lip, ringed by **white oval droplets stretched along the radius** and thinning outward, plus a thin white sheet along the board's tail. Where the lip crashes: a serrated cream curtain shaded violet. Foam is cream with violet shade.
+- **Sky and sun.** A huge low sun in coral and orange with horizontal bars separated by violet gaps, a violet to pink sky with faint horizontal scanlines, soft cloud shapes, and flat translucent purple palm silhouettes (fan B frames the scene with big ones at the edges).
+- **Foreground sea.** Deep teal with flat aqua or cream line networks (fan A: lace cells; fan B: long streaks) and a reflection of the board.
+- **Scale and view.** The surfer is **big**: about 0.26 to 0.40 of the screen height, seen from behind with arms wide. The default wave face is about **1.7 times the surfer's height**, with the crest line sloping so the wall recedes a little down the line (left, ahead of the surfer) as in fan B and barrel.jpg. Small waves are about the surfer's height, big barrel waves about 2.4 times. The taller waves in `barrel.jpg` and `kling-01` to `03` are not the target scale.
 
 Look-and-feel is **flat-shaded vector style, not pixel art**. A pixel-crunch/dither pass may come later as an optional toggle. Do not add it unless asked.
 
 ### Storyboard references (`storyboardimages/`, local only, copyrighted, never commit or deploy)
 
-14 photos and stills. What each is for:
+14 photos and stills, plus the 12 AI-generated style frames in `storyboardimages/kling/` (described above). What each photo is for:
 
 - `images (1).jpg`: 80s surfer in a neon lime and black wetsuit walking out carrying a board with a bold red graphic. Costume and board look, and the paddle-out intro.
 - `images (2).jpg`: low carving turn on a teal face, arms wide, board on its rail, spray fanning behind.
@@ -76,7 +86,7 @@ The wave is the key feature, with the surfer. It is a **parametric, physics-info
 
 - **Why:** sprites cannot change size or react to the surfer; a fluid sim is too heavy for a phone and cannot be art-directed. A model gives the shader its shape *and* gives gameplay an exact surface to ride, so the two cannot disagree.
 - **Inputs:** size (height), hollowness (spilling to plunging), peel speed. Every shape is a function of the distance `d` to the **peel point** (where the wave is breaking right now): the wall builds ahead of it, the lip throws at it, the barrel opens and collapses into whitewater behind it. The surfer's `d` and their height up the face are their coordinates; the camera follows them, so a slower surfer is caught by the barrel and a faster one outruns the wave.
-- **Real-world anchors:** peel speed is `Cb / sin(peel angle)`, and 30 to 50 degrees is rideable (below about 27 it is too fast). Steeper seabeds throw bigger, rounder barrels with thicker jets; gentle ones give small spilling waves. The lip is a ballistic jet that lands ahead of the crest. At full size the surfer is about one sixth of the wave's height.
+- **Real-world anchors:** peel speed is `Cb / sin(peel angle)`, and 30 to 50 degrees is rideable (below about 27 it is too fast). Steeper seabeds throw bigger, rounder barrels with thicker jets; gentle ones give small spilling waves. The lip is a ballistic jet that lands ahead of the crest. Scale follows the key frames (see Art direction): the surfer is about 0.26 of the screen height and the default wave face is about 1.7 times that.
 - **Rendering:** shader for the wall, barrel and lip; noise textures generated once at load for face veins and foam lace (never per-pixel fbm); particles with soft procedural textures for mist and splash. Sprites only exist as small particle textures.
 
 ## Tech

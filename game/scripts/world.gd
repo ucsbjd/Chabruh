@@ -13,8 +13,11 @@ const SUN_Y := 0.20
 ## the middle of it is shown and the sides are cropped. (The 3D wave crops through its camera.)
 const MIN_LAYOUT_ASPECT := 1.5
 
-## Where the stand-in surfer stands on the wave's face: 0 at the trough, 1 at the top of the face.
-const SURFER_FACE_HEIGHT := 0.5
+## How quickly the camera follows the surfer, per second. A little lag is what lets you see them climb the face.
+const CAMERA_FOLLOW_RATE := 3.5
+## The water, and with it the scenery, slides past this much faster or slower with the surfer's speed.
+const TRAVEL_SPEED_SLOW := 0.55
+const TRAVEL_SPEED_FAST := 1.45
 ## The camera always looks down the line, left from behind the surfer, so the wave coming toward them
 ## fills the screen and the break stays at their back. It eases a little less far round as a barrel forms.
 ## Degrees, and the surfer's place across the screen.
@@ -23,10 +26,9 @@ const CAMERA_YAW_BARREL := 24.0
 const SURFER_SCREEN_X_OPEN := 0.47
 const SURFER_SCREEN_X_BARREL := 0.50
 const CAMERA_SWING_RATE := 2.5
-## Temporary controls: how fast the held keys change things, per second.
+## Temporary controls for trying waves: how fast the held keys change things, per second.
 const SIZE_RATE := 0.4
 const HOLLOW_RATE := 0.4
-const PEEL_RATE := 8.0
 const DEFAULT_SIZE := 0.6
 const DEFAULT_HOLLOW := 0.5
 const DEFAULT_PEEL_OFFSET := 3.0
@@ -38,7 +40,7 @@ const MAX_GROUND_ANGLE := 14.0
 const BOARD_TAIL := Vector2(0.8, 0.05)
 ## The water slides past the surfer this much faster than the far scenery, which is what carries the wake.
 const WAKE_DRIFT_FACTOR := 1.7
-## The temporary S key throws a burst of the next strength in this list, so they can be judged one by one.
+## The temporary B key throws a burst of the next strength in this list, so they can be judged one by one.
 const TEST_BURSTS: Array[float] = [0.15, 0.4, 0.7, 1.0]
 ## With ?autoburst in the URL (for a phone, which has no S key) a test burst is thrown this often, in seconds.
 const AUTO_BURST_EVERY := 2.4
@@ -46,11 +48,19 @@ const AUTO_BURST_EVERY := 2.4
 var _time := 0.0
 var _travel := 0.0
 var _crop := 0.0   # screen heights hidden on each side when the screen is narrower than the layout
+## The surfer's motion on the wave, driven by the input.
+var rider := Rider.new()
 ## How far ahead of the peel point the surfer is, in meters. Positive is ahead (to the left),
 ## negative is behind it, where the lip throws and the barrel is.
-var peel_offset := DEFAULT_PEEL_OFFSET
+var peel_offset: float:
+	get:
+		return rider.d
 var _swing := 0.0   # 0 on an open wave, 1 on a full barrel
 var _first_frame := true
+var _focus := Vector3.ZERO
+var _input := RideInput.new()
+var _tuning: TuningData = preload("res://data/tuning.tres")
+var _calibration: Calibration
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
@@ -68,6 +78,11 @@ var _materials: Array[ShaderMaterial] = []
 @onready var _panel: DebugPanel = $DebugPanel
 
 
+func _init() -> void:
+	# Attached now, not in _ready, so a scene that is never started cannot orphan it.
+	add_child(_input)
+
+
 func _ready() -> void:
 	for child in get_children():
 		if child is RidgeLayer:
@@ -78,6 +93,10 @@ func _ready() -> void:
 	for material in _stage.materials():
 		_register(material)
 	_auto_burst = UrlParams.has("autoburst")
+	if UrlParams.has("calibrate"):
+		_calibration = Calibration.new()
+		add_child(_calibration)
+		_calibration.start(_input, rider)
 	_panel.values_changed.connect(_on_panel_changed)
 	resized.connect(_on_resized)
 	Palette.changed.connect(_apply_mood)
@@ -90,8 +109,14 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	_travel += TRAVEL_SPEED * delta
+	_input.process(delta)
 	_read_held_keys(delta)
+	rider.step(delta, _input.steer, _input.height, _stage.model, _tuning)
+	var strength := rider.take_burst()
+	if strength > 0.0:
+		burst(strength)
+	_spray.set_wake(lerpf(0.2, 1.0, rider.speed))
+	_travel += TRAVEL_SPEED * lerpf(TRAVEL_SPEED_SLOW, TRAVEL_SPEED_FAST, rider.speed) * delta
 	for material in _materials:
 		material.set_shader_parameter("time", _time)
 		material.set_shader_parameter("travel", _travel)
@@ -107,18 +132,20 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	_input.handle(event, size)
 	if event is InputEventKey:
 		if event.pressed and not event.echo and event.keycode == KEY_M:
 			Palette.cycle()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
+			_input.reset()
 		elif event.pressed and not event.echo and event.keycode == KEY_P:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
-		elif event.pressed and not event.echo and event.keycode == KEY_S:
+		elif event.pressed and not event.echo and event.keycode == KEY_B:
 			_throw_test_burst()
-	# Touches arrive as emulated mouse clicks, so this one branch covers phone and desktop.
+	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
 	elif event is InputEventMouseButton:
-		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
 			Palette.cycle()
 
 
@@ -127,17 +154,25 @@ func _unhandled_input(event: InputEvent) -> void:
 func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
 	_stage.model.size = wave_size
 	_stage.model.hollowness = hollowness
-	peel_offset = clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX)
+	_place_rider(clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX))
 	_stage.rebuild()
+	_first_frame = true
 	_panel.show_values(wave_size, hollowness, peel_offset)
 
 
-## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). Step 6 calls this from the riding.
+## Puts the surfer at a place along the wave (and mid face) and points the input at it, so they stay there.
+func _place_rider(meters_ahead: float) -> void:
+	_input.steer = Rider.steer_for(meters_ahead)
+	_input.height = RideInput.REST_HEIGHT
+	rider.place(meters_ahead, Rider.u_for(RideInput.REST_HEIGHT))
+
+
+## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). The rider calls this from the riding.
 func burst(strength: float) -> void:
 	_spray.burst(strength)
 
 
-## Temporary: the next of the rising test strengths, so each fan can be judged (S key, or ?autoburst on a phone).
+## Temporary: the next of the rising test strengths, so each fan can be judged (B key, or ?autoburst on a phone).
 func _throw_test_burst() -> void:
 	burst(TEST_BURSTS[_test_burst % TEST_BURSTS.size()])
 	_test_burst += 1
@@ -152,17 +187,18 @@ func set_surfer_pose(pose_name: String) -> void:
 ## Frames the camera on the surfer and stands the surfer and the spray cloud on the wave.
 func _place_surfer_and_spray() -> void:
 	var model := _stage.model
-	var feet := model.surface_point(peel_offset, SURFER_FACE_HEIGHT)
+	var feet := model.surface_point(rider.d, rider.u)
+	_focus = feet if _first_frame else _focus.lerp(feet, 1.0 - exp(-CAMERA_FOLLOW_RATE * get_process_delta_time()))
 	var target_swing := model.barrel()
 	_swing = target_swing if _first_frame else lerpf(_swing, target_swing, 1.0 - exp(-CAMERA_SWING_RATE * get_process_delta_time()))
 	_first_frame = false
-	_stage.frame(feet, lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing), lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing))
+	_stage.frame(_focus, lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing), lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing))
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
 	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
-	var ahead_px := _stage.project(model.surface_point(peel_offset + 0.6, SURFER_FACE_HEIGHT))
-	var behind_px := _stage.project(model.surface_point(peel_offset - 0.6, SURFER_FACE_HEIGHT))
+	var ahead_px := _stage.project(model.surface_point(rider.d + 0.6, rider.u))
+	var behind_px := _stage.project(model.surface_point(rider.d - 0.6, rider.u))
 	var slope := rad_to_deg(atan2(behind_px.y - ahead_px.y, behind_px.x - ahead_px.x))
 	_surfer.set_ground_angle(clampf(slope, -MAX_GROUND_ANGLE, MAX_GROUND_ANGLE))
 
@@ -170,20 +206,20 @@ func _place_surfer_and_spray() -> void:
 	_spray.follow(feet_px + (BOARD_TAIL * pixels_per_meter).rotated(_surfer.rotation), pixels_per_meter, TRAVEL_SPEED * size.y * WAKE_DRIFT_FACTOR)
 
 
-## Up and down change the size, [ and ] the hollowness, left and right slide the surfer along the
-## wave (left is ahead of the peel point, right lets the break catch up).
+## Temporary: - and = change the wave's size, [ and ] its hollowness. (The arrow keys and WASD ride.)
 func _read_held_keys(delta: float) -> void:
-	var size_change := Input.get_axis("ui_down", "ui_up") * SIZE_RATE * delta
+	var size_change := (float(Input.is_key_pressed(KEY_EQUAL)) - float(Input.is_key_pressed(KEY_MINUS))) * SIZE_RATE * delta
 	var hollow_change := (float(Input.is_key_pressed(KEY_BRACKETRIGHT)) - float(Input.is_key_pressed(KEY_BRACKETLEFT))) * HOLLOW_RATE * delta
-	var peel_change := Input.get_axis("ui_right", "ui_left") * PEEL_RATE * delta
-	if size_change != 0.0 or hollow_change != 0.0 or peel_change != 0.0:
-		set_wave(_stage.model.size + size_change, _stage.model.hollowness + hollow_change, peel_offset + peel_change)
+	if size_change != 0.0 or hollow_change != 0.0:
+		var keep_camera := _first_frame
+		set_wave(_stage.model.size + size_change, _stage.model.hollowness + hollow_change, rider.d)
+		_first_frame = keep_camera
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
 	_stage.model.size = wave_size
 	_stage.model.hollowness = hollowness
-	peel_offset = ahead_of_peel
+	_place_rider(ahead_of_peel)
 	_stage.rebuild()
 
 

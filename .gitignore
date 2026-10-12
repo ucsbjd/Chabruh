@@ -13,3 +13,6 @@ storyboardimages/
 .firebase/
 node_modules/
 .claude/settings.local.json
+
+# Raw calibration recordings are personal data; the summary files are fine to keep
+calibration/session-*.json

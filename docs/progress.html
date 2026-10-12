@@ -304,26 +304,74 @@ const STEPS = [
   },
   {
     n: 6, status: "todo",
-    title: "Riding and feel",
-    goal: "Catch a wave and ride it. It should feel good in the hand with the moving wave and the spray already there.",
+    title: "Riding and feel (with the stand-in surfer)",
+    goal: "Ride one wave: up and down the face, a bottom turn into a top turn, a cutback, a floater, steered by the trackpad (or mouse), with the spray and speed following the riding.",
     build: [
-      "Surfer states: paddle, automatic pop-up, ride, soft wipeout, drift back. The animation follows the motion (low and turning up is a bottom turn, high and turning down is a top turn, flat and fast is trim). Only the ride animation exists so far: make the others with the sprite pipeline in docs/sprite-pipeline.md (cutback, bottom turn, top turn, wipeout, paddle, pop-up) and ask me before any Kling video call, because motion control costs about 8 credits per second. Add the short cross-dissolve between animations.",
-      "Motion model on top of the step 3 WaveModel: the surfer's distance to the peel point and height up the face (the model gives the slope), speed from slope and pumping, everything smoothed and clamped. Too far ahead and the wave shoulders out and slows you. Too far behind and the lip lands on you (a soft wipeout, never game over).",
-      "Connect the step 5 spray to the riding. It is ready: world.burst(strength) throws the fan (SurferSpray.burst, 0 to 1), set_wake(0..1) sets the foam wake, splash(strength) is the air landing, and follow() already keeps it on the board's tail. Fan strength = speed times how sharp the turn is; wake from speed. Remove the temporary S key and ?autoburst once riding drives it.",
-      "Input: mouse X plus the wheel on desktop, arrow keys / WASD as a fallback, two-finger drag on mobile (horizontal steers, vertical changes height). The wheel and touch must never scroll or zoom the page.",
-      "A camera that follows the surfer smoothly. It always looks down the line (WaveStage.frame, yaw about +30, set in world.gd); keep it that way and do not swing it into the barrel.",
-      "A tuning resource with Feel (dead zone, response curve) and Reach dials, and a small hidden tuning panel (backtick key or triple-tap) that replaces the temporary size, hollow and peel sliders."
+      "Already built (branch step-6): RideInput (mouse X steers, wheel, two-finger trackpad scroll, two-finger touch drag, arrow keys and WASD), Rider (position along the wave and height up the face, a smooth speed-limited follow, speed from slope, pumping and the pocket, sharpness of turns, a crude move label), the camera follows with a little lag, spray fan strength is speed times sharpness, the wake follows speed. The temporary S key is now B, and arrow keys ride (size is - and =, hollow is [ and ]).",
+      "Calibration from my own hands: run tools\\calibrate.ps1. The game asks for six moves five times each (up and down the wave, bottom turn into top turn, cutback, hit the lip, floater, trim) and records every raw input event and the surfer's path to calibration/session-*.json. Then python tools/analyze_calibration.py averages them, draws what each move looked like, and suggests the gains and direction (invert) for data/tuning.tres. Apply them, ride, and repeat if it still feels off.",
+      "Tune the feel dials in data/tuning.tres (follow rate, speed limits, pump gain, spray threshold) until the moves read: bottom turn low and rising, top turn high and snapping down, cutback swinging back toward the curl.",
+      "Make the move labels drive the surfer: lean and tilt for now (only the ride sprite exists), with animation names ready for step 8 and 9 to fill in.",
+      "A small hidden tuning panel (backtick key or triple-tap) replaces the temporary size, hollow and peel sliders. Remove the B key and ?autoburst when the riding drives the spray well.",
+      "Wipeouts and paddling back in are NOT part of this slice."
     ],
-    notNow: ["Sound, sets of waves, the tube moment."],
+    notNow: ["New surfer art (steps 7 to 9), wipeouts, sound, sets of waves, the tube moment."],
     verify: [
-      "Mouse X plus wheel on desktop, and two-finger drag on my phone, both feel smooth, and nothing scrolls or zooms.",
-      "I can chain a bottom turn into a top turn, the animation follows, and a hard snap throws a big spray fan while a gentle carve stays subtle.",
-      "Drifting too far back gives a gentle wipeout and I am paddling again within a few seconds. No text or score appears.",
-      "Frame rate holds on my phone."
+      "Two-finger scroll on the trackpad moves the surfer up and down the face and sideways along the wave, smoothly, and nothing scrolls or zooms the page.",
+      "I can chain a bottom turn into a top turn and a cutback on one wave; a hard snap throws a big spray fan and a gentle carve stays subtle.",
+      "The averages from my calibration run (Claude shows the picture and the numbers) match how the surfer responds.",
+      "Frame rate holds, the console is clean."
     ]
   },
   {
     n: 7, status: "todo",
+    title: "Surfer foundry 1: Blender to game, hello world",
+    goal: "Prove the whole sprite-making pipeline with throwaway art: Blender renders a placeholder figure, and the game draws it in the wave's flat colours with mood tints and coloured shadows.",
+    build: [
+      "Install the free tools: Blender 4.5 LTS (winget BlenderFoundation.Blender.LTS.4.5) and a Python 3.11 environment with numpy, pillow, opencv and mediapipe (uv or py -3.11). Nothing paid.",
+      "tools/foundry/: a headless Blender script (blender -b --python) that builds a placeholder figure and board, poses it, and renders frames to PNG as three small passes: a region mask (skin, shorts, board, hair), a three-band light ramp from the sun's direction, and a rim.",
+      "A Godot shader that combines the passes with the current mood: region colours from the Palette, light and violet shade bands, so the surfer re-tints with the mood and matches the wave's flat look. SurferSprites learns a second frame format; the Kling ride sprite keeps working.",
+      "Checks: the board centre sits on the anchor in every frame, frame size is consistent, and a contact sheet is written for review. docs/foundry.md records every command."
+    ],
+    notNow: ["The real character, real motion, game integration beyond the placeholder."],
+    verify: [
+      "The placeholder surfer stands on the wave in the three moods, re-tinted by the mood, with violet shadow bands and no baked colours.",
+      "One command regenerates every frame from the script, and Claude reports what was installed and how long a render takes."
+    ]
+  },
+  {
+    n: 8, status: "todo",
+    title: "Surfer foundry 2: the toon surfer",
+    goal: "The real surfer, from the look sheet in storyboardimages/character: lean tanned surfer, spiky sun-bleached hair, coral shorts with aqua waistband and palm print, shaka back tattoo, in the wave's flat style.",
+    build: [
+      "The body: try the free MPFB (MakeHuman for Blender) human with a Rigify rig; verify its output license first. If it gets fiddly, build a chunky stylised body by script instead.",
+      "Shorts, hair, tattoo and a rainbow shortboard in regions (so the mask pass can recolour them). The feet are held to the board by IK, and the board is the parent, so the stance stays glued to it.",
+      "Look test: six poses rendered and compared with the key frames kling-04 and 05. Gate: if it does not look better than the Kling sprite, fall back to keeping the Kling sprites plus a flat toon filter, and say so.",
+      "Reference frames from the footage used before can be run through MediaPipe (on the CPU) to guide key poses."
+    ],
+    notNow: ["The full set of moves."],
+    verify: [
+      "A contact sheet of the surfer in six poses looks like the sheet I made and fits the wave's flat style, next to kling-04 and 05.",
+      "The character's license and where every piece came from is written down."
+    ]
+  },
+  {
+    n: 9, status: "todo",
+    title: "Surfer foundry 3: the moves and the pose grid, in the game",
+    goal: "The three moves and continuous control: bottom turn, top turn, cutback as short clips, and a grid of stances so the surfer leans and crouches continuously with the player's hands.",
+    build: [
+      "Key poses for each move from reference frames, rendered as short clips (about 16 to 24 frames each at 12 fps) plus a trim loop.",
+      "A pose grid (stance low to high, lean left to right, about 9 stills) so the game can pick and cross-fade by the rider's height and turn, not just play clips.",
+      "Wire it to the Rider's move labels, with a 0.1 s cross-dissolve between clips. The surfer's body, board tilt and the spray tail point stay consistent.",
+      "A quality pass on the frames (automatic checks plus contact sheets)."
+    ],
+    notNow: ["Wipeouts, paddling, airs, barrel poses (they come with their own steps)."],
+    verify: [
+      "Riding up and down the wave, the surfer's body follows continuously, and the bottom turn, top turn and cutback each play when I do them.",
+      "No visible jumps between clips, the surfer stays on the face, and it is smooth on my phone."
+    ]
+  },
+  {
+    n: 10, status: "todo",
     title: "Wave cycle: lineup, set, barrel",
     goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
     build: [
@@ -341,7 +389,7 @@ const STEPS = [
     ]
   },
   {
-    n: 8, status: "todo",
+    n: 11, status: "todo",
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
@@ -359,7 +407,7 @@ const STEPS = [
     ]
   },
   {
-    n: 9, status: "todo",
+    n: 12, status: "todo",
     title: "Mobile polish and ship v0.1",
     goal: "Something I can send to a friend's phone.",
     build: [

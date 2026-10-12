@@ -24,6 +24,8 @@ func _initialize() -> void:
 	_test_wave_motion()
 	_test_wave_mist()
 	_test_spray()
+	_test_riding()
+	await _test_calibration()
 	_test_surfer_sprites()
 	_test_surfer()
 	_test_tuning()
@@ -275,6 +277,94 @@ func _test_spray() -> void:
 	wave_spray.free()
 
 
+func _test_riding() -> void:
+	var view := Vector2(1280.0, 720.0)
+	var input := RideInput.new()
+	var start_height := input.height
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	wheel.pressed = true
+	wheel.factor = 1.0
+	input.handle(wheel, view)
+	_check(input.height > start_height, "the wheel up lifts the surfer up the face")
+	var pan := InputEventPanGesture.new()
+	pan.delta = Vector2(0.0, -10.0)
+	var before := input.height
+	input.handle(pan, view)
+	_check(input.height > before, "two fingers sliding up the trackpad lift the surfer")
+	pan.delta = Vector2(-10.0, 0.0)
+	var steer_before := input.steer
+	input.handle(pan, view)
+	_check(input.steer > steer_before, "two fingers sliding left send the surfer ahead, to the left")
+	var motion := InputEventMouseMotion.new()
+	motion.position = Vector2(60.0, 300.0)
+	input.handle(motion, view)
+	var left := input.steer
+	motion.position = Vector2(1220.0, 300.0)
+	input.handle(motion, view)
+	_check(left > RideInput.REST_STEER and input.steer < RideInput.REST_STEER, "the mouse on the left steers ahead, on the right back toward the curl")
+	for i in 400:
+		input.handle(wheel, view)
+	_check(input.height <= 1.0 and input.steer >= 0.0 and input.steer <= 1.0, "the input is always clamped to 0 to 1")
+	input.free()
+
+	_check(is_equal_approx(Rider.steer_for(Rider.d_for(0.3)), 0.3), "steering maps to a place on the wave and back")
+	_check(absf(Rider.d_for(RideInput.REST_STEER) - 3.0) < 0.6, "the middle of the steering range is the pocket")
+	var wave := WaveModel.new()
+	wave.size = 0.6
+	var tuning := TuningData.new()
+	var rider := Rider.new()
+	rider.place(3.0, 0.5)
+	for i in 180:
+		rider.step(1.0 / 60.0, 0.9, 1.0, wave, tuning)
+	_check(absf(rider.d - Rider.d_for(0.9)) < 0.3 and absf(rider.u - Rider.u_for(1.0)) < 0.05, "the surfer settles where they were pointed")
+	_check(rider.speed >= 0.0 and rider.speed <= 1.0 and rider.sharpness >= 0.0 and rider.sharpness <= 1.0, "speed and sharpness stay between 0 and 1")
+	var steady := Rider.new()
+	steady.place(3.0, 0.5)
+	var steady_burst := 0.0
+	for i in 240:
+		steady.step(1.0 / 60.0, 0.49, 0.5, wave, tuning)
+		steady_burst = maxf(steady_burst, steady.take_burst())
+	_check(steady_burst == 0.0, "holding still throws no spray")
+	var snapper := Rider.new()
+	snapper.place(3.0, 0.5)
+	var biggest := 0.0
+	for i in 420:
+		var high := (i / 30) % 2 == 0
+		snapper.step(1.0 / 60.0, 0.49, 1.0 if high else 0.0, wave, tuning)
+		biggest = maxf(biggest, snapper.take_burst())
+	_check(biggest > 0.15, "snapping up and down the face throws spray (%.2f)" % biggest)
+	var gentle := Rider.new()
+	gentle.place(3.0, 0.5)
+	var smallest := 0.0
+	for i in 600:
+		gentle.step(1.0 / 60.0, 0.49, 0.5 + 0.12 * sin(i / 60.0 * 1.5), wave, tuning)
+		smallest = maxf(smallest, gentle.take_burst())
+	_check(smallest < biggest, "a gentle carve throws less than a hard snap")
+
+
+func _test_calibration() -> void:
+	var input := RideInput.new()
+	var rider := Rider.new()
+	var run := Calibration.new()
+	root.add_child(run)
+	run.start(input, rider)
+	_check(Calibration.MOVES.size() >= 5 and Calibration.TRIALS_PER_MOVE == 5, "the calibration asks for each move five times")
+	var space := InputEventKey.new()
+	space.keycode = KEY_SPACE
+	space.pressed = true
+	run._unhandled_input(space)
+	var pan := InputEventPanGesture.new()
+	pan.delta = Vector2(0.0, -5.0)
+	input.handle(pan, Vector2(1280.0, 720.0))
+	await process_frame
+	_check(run._events.size() == 1 and run._events[0][1] == "pan", "a trial records the raw trackpad events")
+	run._unhandled_input(space)
+	_check(run._results.size() == 1 and run._results[0].move == "up_down", "pressing space again ends the trial and keeps it")
+	run.free()
+	input.free()
+
+
 func _test_surfer_sprites() -> void:
 	_check(SurferSprites.ORDER.size() == SurferSprites.ANIMATIONS.size(), "the gallery order lists every animation")
 	var labelled := true
@@ -334,7 +424,7 @@ func _test_world() -> void:
 	_check(materials[0].get_shader_parameter("wave_mid") == mood.wave_mid and materials[1].get_shader_parameter("swell_top") == mood.swell_top, "the 3D wave and sea are fed the mood's colours")
 	_check(stage.model.barrel() > 0.5, "a big hollow wave is a barrel")
 
-	var feet := stage.model.surface_point(world.peel_offset, world.SURFER_FACE_HEIGHT)
+	var feet := stage.model.surface_point(world.rider.d, world.rider.u)
 	var feet_px := stage.project(feet)
 	var surfer: Surfer = world.get_node("Surfer")
 	_check(surfer.position.is_equal_approx(feet_px), "the surfer stands on the face in the running scene")
@@ -364,11 +454,11 @@ func _test_world() -> void:
 	await process_frame
 	_check(spray.live_particles() > 0, "the world's burst call throws spray")
 	var key := InputEventKey.new()
-	key.keycode = KEY_S
+	key.keycode = KEY_B
 	key.pressed = true
 	var strengths_before: int = world._test_burst
 	world._unhandled_input(key)
-	_check(world._test_burst == strengths_before + 1, "the S key throws the next test burst")
+	_check(world._test_burst == strengths_before + 1, "the B key throws the next test burst")
 	var back_layer_before_surfer := false
 	for child in world.get_children():
 		if child == surfer:

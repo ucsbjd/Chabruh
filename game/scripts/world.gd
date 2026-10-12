@@ -58,7 +58,7 @@ var peel_offset: float:
 var _swing := 0.0   # 0 on an open wave, 1 on a full barrel
 var _first_frame := true
 var _focus := Vector3.ZERO
-var _input := RideInput.new()
+var _ride_input := RideInput.new()
 var _tuning: TuningData = preload("res://data/tuning.tres")
 var _calibration: Calibration
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
@@ -80,7 +80,7 @@ var _materials: Array[ShaderMaterial] = []
 
 func _init() -> void:
 	# Attached now, not in _ready, so a scene that is never started cannot orphan it.
-	add_child(_input)
+	add_child(_ride_input)
 
 
 func _ready() -> void:
@@ -96,7 +96,7 @@ func _ready() -> void:
 	if UrlParams.has("calibrate"):
 		_calibration = Calibration.new()
 		add_child(_calibration)
-		_calibration.start(_input, rider)
+		_calibration.start(_ride_input, rider)
 	_panel.values_changed.connect(_on_panel_changed)
 	resized.connect(_on_resized)
 	Palette.changed.connect(_apply_mood)
@@ -109,9 +109,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	_input.process(delta)
+	_ride_input.process(delta)
 	_read_held_keys(delta)
-	rider.step(delta, _input.steer, _input.height, _stage.model, _tuning)
+	rider.step(delta, _ride_input.steer, _ride_input.height, _stage.model, _tuning)
 	var strength := rider.take_burst()
 	if strength > 0.0:
 		burst(strength)
@@ -132,13 +132,13 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	_input.handle(event, size)
+	_ride_input.handle(event, size)
 	if event is InputEventKey:
 		if event.pressed and not event.echo and event.keycode == KEY_M:
 			Palette.cycle()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
-			_input.reset()
+			_ride_input.reset()
 		elif event.pressed and not event.echo and event.keycode == KEY_P:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
 		elif event.pressed and not event.echo and event.keycode == KEY_B:
@@ -162,8 +162,8 @@ func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void
 
 ## Puts the surfer at a place along the wave (and mid face) and points the input at it, so they stay there.
 func _place_rider(meters_ahead: float) -> void:
-	_input.steer = Rider.steer_for(meters_ahead)
-	_input.height = RideInput.REST_HEIGHT
+	_ride_input.steer = Rider.steer_for(meters_ahead)
+	_ride_input.height = RideInput.REST_HEIGHT
 	rider.place(meters_ahead, Rider.u_for(RideInput.REST_HEIGHT))
 
 

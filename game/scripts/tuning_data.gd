@@ -16,8 +16,17 @@ extends Resource
 @export var pan_height_gain: float = 0.02
 ## The same for steering along the wave.
 @export var pan_steer_gain: float = 0.02
-## Height per notch of a mouse wheel (scaled by how big the notch is on a trackpad).
-@export var wheel_step: float = 0.06
+## Height (and steering) per unit of wheel scroll. A mouse notch is 1; a trackpad's two-finger scroll sends many
+## small steps that add up. Set from the calibration run.
+@export var wheel_height_step: float = 0.075
+@export var wheel_steer_step: float = 0.05
+## A trackpad sends bigger steps the faster the fingers move, so a snap would pin the surfer to the top or the
+## bottom. Steps are compressed smoothly toward this size: small ones stay exact, a flick counts for more but never more than this.
+@export var wheel_cap: float = 1.0
+## While scrolling mostly one way, the other direction's stray steps are ignored: a step is dropped when the
+## other direction has been this many times busier over the last `axis_lock_window` seconds.
+@export var axis_lock_ratio: float = 3.0
+@export var axis_lock_window: float = 0.15
 ## Flip these if the surfer goes the wrong way for your trackpad's scroll direction.
 @export var invert_pan_height: bool = false
 @export var invert_pan_steer: bool = false

@@ -1,0 +1,119 @@
+{
+ "session": "session-2026-10-12T22-22-42.json",
+ "moves": {
+  "up_down": {
+   "trials": 5,
+   "duration": 8.918,
+   "events_by_kind": {
+    "wheel": 4328
+   },
+   "up_range": 13.351,
+   "ahead_range": 2.223,
+   "up_strokes_median": 10.77,
+   "ahead_strokes_median": 1.382,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.273,
+    0.912
+   ],
+   "surfer_speed_max": 0.915,
+   "surfer_sharpness_max": 0.79
+  },
+  "bottom_to_top": {
+   "trials": 5,
+   "duration": 4.383,
+   "events_by_kind": {
+    "wheel": 1956
+   },
+   "up_range": 21.075,
+   "ahead_range": 10.496,
+   "up_strokes_median": 9.365,
+   "ahead_strokes_median": 6.419,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.135,
+    0.735
+   ],
+   "surfer_speed_max": 0.76,
+   "surfer_sharpness_max": 0.927
+  },
+  "cutback": {
+   "trials": 5,
+   "duration": 4.65,
+   "events_by_kind": {
+    "wheel": 1046
+   },
+   "up_range": 3.944,
+   "ahead_range": 25.715,
+   "up_strokes_median": 1.44,
+   "ahead_strokes_median": 14.649,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.412,
+    0.603
+   ],
+   "surfer_speed_max": 0.588,
+   "surfer_sharpness_max": 0.703
+  },
+  "hit_lip": {
+   "trials": 5,
+   "duration": 3.731,
+   "events_by_kind": {
+    "wheel": 888
+   },
+   "up_range": 114.693,
+   "ahead_range": 54.662,
+   "up_strokes_median": 14.501,
+   "ahead_strokes_median": 4.716,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.09,
+    0.807
+   ],
+   "surfer_speed_max": 0.8,
+   "surfer_sharpness_max": 0.933
+  },
+  "floater": {
+   "trials": 5,
+   "duration": 4.101,
+   "events_by_kind": {
+    "wheel": 808
+   },
+   "up_range": 42.528,
+   "ahead_range": 46.788,
+   "up_strokes_median": 25.76,
+   "ahead_strokes_median": 14.562,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.51,
+    0.96
+   ],
+   "surfer_speed_max": 0.635,
+   "surfer_sharpness_max": 0.925
+  },
+  "trim": {
+   "trials": 5,
+   "duration": 3.567,
+   "events_by_kind": {
+    "wheel": 673
+   },
+   "up_range": 0.476,
+   "ahead_range": 4.517,
+   "up_strokes_median": 0.825,
+   "ahead_strokes_median": 1.684,
+   "mouse_range_px": 0.0,
+   "surfer_u_range": [
+    0.49,
+    0.512
+   ],
+   "surfer_speed_max": 0.562,
+   "surfer_sharpness_max": 0.049
+  }
+ },
+ "suggested_tuning": {
+  "pan_height_gain": 0.07428,
+  "invert_pan_height": false,
+  "note": "invert_pan_height is true when the opening UP stroke came out as down; stroke is the median swing in raw units.",
+  "pan_steer_gain": 0.05578
+ }
+}

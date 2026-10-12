@@ -7,3 +7,7 @@ script = ExtResource("1")
 dead_zone = 0.08
 response_curve = 1.6
 reach = 0.8
+wheel_height_step = 0.09
+wheel_steer_step = 0.05
+wheel_cap = 3.0
+spray_threshold = 0.22

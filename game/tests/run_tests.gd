@@ -287,6 +287,30 @@ func _test_riding() -> void:
 	wheel.factor = 1.0
 	input.handle(wheel, view)
 	_check(input.height > start_height, "the wheel up lifts the surfer up the face")
+	var flick := RideInput.new()
+	var flick_wheel := InputEventMouseButton.new()
+	flick_wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	flick_wheel.pressed = true
+	flick_wheel.factor = 20.0
+	flick.handle(flick_wheel, view)
+	_check(flick.height - RideInput.REST_HEIGHT <= flick.tuning.wheel_height_step * flick.tuning.wheel_cap + 0.001, "one huge flick step is capped, so it cannot pin the surfer to the top")
+	var small := RideInput.new()
+	flick_wheel.factor = 0.05
+	small.handle(flick_wheel, view)
+	_check(absf(small.height - RideInput.REST_HEIGHT - small.tuning.wheel_height_step * 0.05) < 0.0005, "small trackpad steps stay exact")
+	flick.free()
+	small.free()
+	var lock := RideInput.new()
+	flick_wheel.factor = 0.1
+	for i in 10:
+		lock.handle(flick_wheel, view)
+	var sideways := InputEventMouseButton.new()
+	sideways.button_index = MOUSE_BUTTON_WHEEL_LEFT
+	sideways.pressed = true
+	sideways.factor = 0.05
+	lock.handle(sideways, view)
+	_check(is_equal_approx(lock.steer, RideInput.REST_STEER), "stray sideways steps are ignored while scrolling up and down")
+	lock.free()
 	var pan := InputEventPanGesture.new()
 	pan.delta = Vector2(0.0, -10.0)
 	var before := input.height
@@ -347,6 +371,7 @@ func _test_calibration() -> void:
 	var input := RideInput.new()
 	var rider := Rider.new()
 	var run := Calibration.new()
+	run.save_enabled = false
 	root.add_child(run)
 	run.start(input, rider)
 	_check(Calibration.MOVES.size() >= 5 and Calibration.TRIALS_PER_MOVE == 5, "the calibration asks for each move five times")

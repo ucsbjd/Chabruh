@@ -4,12 +4,13 @@ extends SceneTree
 ## tools/capture.ps1. Options go after `--`, as name=value:
 ##   out=path.png  size=0.5  hollow=0.5  peel=3.0  mood=sunset  frames=45  pose=ride  gallery=no
 ##   snaps=60,90,120   also save the frame at each of these frame numbers, as out-60.png and so on
+##   height=0.9        where up the face the surfer is held, 0 low to 1 high
 ##   burst=0.8@70      fire a spray burst of that strength (0 to 1) when that frame is reached
 ## (peel is how many meters ahead of the peel point the surfer is.) It also prints the average frame
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": ""}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": ""}
 
 
 func _initialize() -> void:
@@ -20,6 +21,9 @@ func _initialize() -> void:
 	root.get_node("Palette").select(options.mood, true)
 	world.set_wave(float(options.size), float(options.hollow), float(options.peel))
 	world.set_surfer_pose(options.pose)
+	if options.height != "":
+		world.rider.place(world.rider.d, Rider.u_for(float(options.height)))
+		world._ride_input.height = float(options.height)
 	if options.gallery == "yes":
 		world.get_node("PoseGallery").open()
 	var frames := int(options.frames)

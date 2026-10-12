@@ -32,6 +32,8 @@ var _events: Array = []
 var _trace: Array = []
 var _results: Array = []
 var _session := Time.get_datetime_string_from_system().replace(":", "-")
+## Off in the tests, so they leave no recordings behind.
+var save_enabled := true
 var _label := Label.new()
 var _status := Label.new()
 
@@ -149,6 +151,8 @@ func _save_path() -> String:
 
 
 func _save(final := false) -> void:
+	if not save_enabled:
+		return
 	var path := _save_path()
 	var payload := JSON.stringify({"created": _session, "tuning": _tuning_snapshot(), "trials": _results})
 	if OS.has_feature("web"):

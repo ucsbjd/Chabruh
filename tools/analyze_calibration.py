@@ -137,7 +137,7 @@ def main():
         if stroke > 0:
             suggestions["pan_steer_gain"] = round(0.5 / stroke, 5)
     summary["suggested_tuning"] = suggestions
-    out = os.path.join(os.path.dirname(path), "summary")
+    out = os.path.splitext(path)[0].replace("session-", "summary-")
     json.dump(summary, open(out + ".json", "w"), indent=1)
     draw(summary, per_move, out + ".png")
     print(json.dumps(summary, indent=1))

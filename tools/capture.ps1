@@ -16,6 +16,7 @@ param(
     [string]$Pose = 'ride',
     [string]$Snaps = '',
     [string]$Burst = '',
+    [string]$Height = '',
     [switch]$Gallery,
     [switch]$Perf
 )
@@ -25,7 +26,7 @@ $full = if ([IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path (Get-Locati
 $arguments = @('--path', "`"$Root\game`"", '--rendering-driver', 'opengl3', '--resolution', $Resolution)
 if ($Perf) { $arguments += '--disable-vsync' }
 $arguments += @('--quit-after', ($Frames + 300), '--script', 'res://tests/capture.gd', '--',
-    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst")
+    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height")
 
 $process = Start-Process -FilePath $Godot -ArgumentList $arguments -NoNewWindow -PassThru
 if (-not $process.WaitForExit(120000)) {

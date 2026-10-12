@@ -11,7 +11,10 @@ const D_FAR := 12.0                  # far down the shoulder
 const STEER_CURVE := 1.3             # puts the pocket near the middle of the steering range
 const U_LOW := 0.06
 const U_HIGH := 0.96
-const TURN_RATE_FULL := 7.0          # radians per second of heading change that count as the sharpest turn
+const ACCEL_FULL := 60.0             # meters per second squared of velocity change that count as the sharpest snap
+const ACTIVITY_RATE := 3.0           # how fast the recent-activity average follows the motion, per second
+const ACTIVITY_LOW := 0.6            # meters per second of recent motion below which nothing counts as a turn...
+const ACTIVITY_HIGH := 2.5           # ...and above which a turn counts in full
 const SPEED_SMOOTHING := 4.0
 const MOVE_HOLD := 0.3               # seconds a move label stays once seen
 const BURST_POWER := 1.9             # spray strength per unit of speed times sharpness
@@ -25,7 +28,8 @@ var speed := 0.5
 var sharpness := 0.0
 var move := "trim"
 
-var _heading := 0.0
+var _last_velocity := Vector2.ZERO
+var _activity := 0.0
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
@@ -77,15 +81,14 @@ func step(delta: float, steer: float, height: float, model: WaveModel, tuning: T
 	var want_speed := clampf(0.2 + 0.3 * slope + 0.35 * energy + 0.2 * pocket - 0.4 * shoulder, 0.0, 1.0)
 	speed = lerpf(speed, want_speed, 1.0 - exp(-SPEED_SMOOTHING * delta))
 
-	# Sharpness: how fast the direction of travel (along the wave and up the face, in meters) is turning.
-	var vy := vel_u * model.crest_height_at(d)
-	var motion := Vector2(vel_d, vy).length()
-	if motion > 0.4:
-		var heading := atan2(vy, vel_d)
-		var turn := absf(angle_difference(_heading, heading)) / delta
-		_heading = heading
-		var raw := clampf(turn / TURN_RATE_FULL, 0.0, 1.0) * smoothstep(0.5, 3.0, motion)
-		sharpness = maxf(raw, sharpness)
+	# Sharpness: how hard the velocity (along the wave and up the face, in meters per second) changes, counted
+	# only when there has been real motion lately, so a snap back at the top throws spray and jitter does not.
+	var velocity := Vector2(vel_d, vel_u * model.crest_height_at(d))
+	var accel := (velocity - _last_velocity).length() / delta
+	_last_velocity = velocity
+	_activity = lerpf(_activity, velocity.length(), 1.0 - exp(-ACTIVITY_RATE * delta))
+	var raw := clampf(accel / ACCEL_FULL, 0.0, 1.0) * smoothstep(ACTIVITY_LOW, ACTIVITY_HIGH, _activity)
+	sharpness = maxf(raw, sharpness)
 	sharpness *= exp(-6.0 * delta)
 
 	_update_spray(delta, tuning)
@@ -109,13 +112,13 @@ func _update_spray(delta: float, tuning: TuningData) -> void:
 
 func _update_move() -> void:
 	var seen := "trim"
-	if u > 0.88 and absf(vel_d) > 1.0 and absf(vel_u) < 0.5 and sharpness < 0.3:
+	if u > 0.75 and absf(vel_d) > 0.8 and sharpness < 0.35:
 		seen = "floater"
-	elif u > 0.7 and sharpness > 0.3:
-		seen = "hit_the_lip" if u > 0.88 else "top_turn"
-	elif u < 0.45 and vel_u > 0.45:
+	elif u > 0.6 and sharpness > 0.3:
+		seen = "hit_the_lip" if u > 0.8 else "top_turn"
+	elif u < 0.4 and vel_u > 0.4:
 		seen = "bottom_turn"
-	elif vel_d < -1.5 and u > 0.2 and u < 0.85:
+	elif vel_d < -1.2 and u > 0.2 and u < 0.85:
 		seen = "cutback"
 	# A move label stays a moment once seen, so it does not flicker.
 	if seen != "trim" or _clock > _move_until:

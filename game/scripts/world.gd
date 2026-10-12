@@ -15,12 +15,13 @@ const MIN_LAYOUT_ASPECT := 1.5
 
 ## Where the stand-in surfer stands on the wave's face: 0 at the trough, 1 at the top of the face.
 const SURFER_FACE_HEIGHT := 0.5
-## The camera looks left from behind the surfer, and swings round to look right from ahead of them as
-## a barrel forms, so the tube's mouth faces the camera. Degrees, and the surfer's place across the screen.
+## The camera always looks down the line, left from behind the surfer, so the wave coming toward them
+## fills the screen and the break stays at their back. It eases a little less far round as a barrel forms.
+## Degrees, and the surfer's place across the screen.
 const CAMERA_YAW_OPEN := 30.0
-const CAMERA_YAW_BARREL := -26.0
-const SURFER_SCREEN_X_OPEN := 0.44
-const SURFER_SCREEN_X_BARREL := 0.54
+const CAMERA_YAW_BARREL := 24.0
+const SURFER_SCREEN_X_OPEN := 0.47
+const SURFER_SCREEN_X_BARREL := 0.50
 const CAMERA_SWING_RATE := 2.5
 ## Temporary controls: how fast the held keys change things, per second.
 const SIZE_RATE := 0.4
@@ -32,6 +33,15 @@ const DEFAULT_PEEL_OFFSET := 3.0
 const DEFAULT_POSE := "ride"
 ## The surfer sits on the face at an angle that follows the wave, but never tips past this, in degrees.
 const MAX_GROUND_ANGLE := 14.0
+## Where the board's tail is, in meters from the board's centre (right and down, before the board tilts):
+## the spray is thrown from here.
+const BOARD_TAIL := Vector2(0.8, 0.05)
+## The water slides past the surfer this much faster than the far scenery, which is what carries the wake.
+const WAKE_DRIFT_FACTOR := 1.7
+## The temporary S key throws a burst of the next strength in this list, so they can be judged one by one.
+const TEST_BURSTS: Array[float] = [0.15, 0.4, 0.7, 1.0]
+## With ?autoburst in the URL (for a phone, which has no S key) a test burst is thrown this often, in seconds.
+const AUTO_BURST_EVERY := 2.4
 
 var _time := 0.0
 var _travel := 0.0
@@ -39,9 +49,12 @@ var _crop := 0.0   # screen heights hidden on each side when the screen is narro
 ## How far ahead of the peel point the surfer is, in meters. Positive is ahead (to the left),
 ## negative is behind it, where the lip throws and the barrel is.
 var peel_offset := DEFAULT_PEEL_OFFSET
-var _swing := 0.0   # 0 behind the surfer, 1 swung round to the barrel side
+var _swing := 0.0   # 0 on an open wave, 1 on a full barrel
 var _first_frame := true
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
+var _test_burst := 0
+var _auto_burst_in := AUTO_BURST_EVERY
+var _auto_burst := false
 
 var _ridges: Array[RidgeLayer] = []
 ## Each shader material with the mood properties it declares as uniforms.
@@ -50,7 +63,8 @@ var _materials: Array[ShaderMaterial] = []
 
 @onready var _stage: WaveStage = $WaveStage
 @onready var _surfer: Surfer = $Surfer
-@onready var _spray: ColorRect = $Spray
+@onready var _spray: SurferSpray = $Spray
+@onready var _wave_spray: WaveSpray = $WaveSpray
 @onready var _panel: DebugPanel = $DebugPanel
 
 
@@ -63,6 +77,7 @@ func _ready() -> void:
 			_register(child.material)
 	for material in _stage.materials():
 		_register(material)
+	_auto_burst = UrlParams.has("autoburst")
 	_panel.values_changed.connect(_on_panel_changed)
 	resized.connect(_on_resized)
 	Palette.changed.connect(_apply_mood)
@@ -83,6 +98,12 @@ func _process(delta: float) -> void:
 	for ridge in _ridges:
 		ridge.place(_travel, size.y, _crop)
 	_place_surfer_and_spray()
+	_wave_spray.update(_stage, _time)
+	if _auto_burst:
+		_auto_burst_in -= delta
+		if _auto_burst_in <= 0.0:
+			_auto_burst_in = AUTO_BURST_EVERY
+			_throw_test_burst()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -93,6 +114,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
 		elif event.pressed and not event.echo and event.keycode == KEY_P:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
+		elif event.pressed and not event.echo and event.keycode == KEY_S:
+			_throw_test_burst()
 	# Touches arrive as emulated mouse clicks, so this one branch covers phone and desktop.
 	elif event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -107,6 +130,17 @@ func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void
 	peel_offset = clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX)
 	_stage.rebuild()
 	_panel.show_values(wave_size, hollowness, peel_offset)
+
+
+## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). Step 6 calls this from the riding.
+func burst(strength: float) -> void:
+	_spray.burst(strength)
+
+
+## Temporary: the next of the rising test strengths, so each fan can be judged (S key, or ?autoburst on a phone).
+func _throw_test_burst() -> void:
+	burst(TEST_BURSTS[_test_burst % TEST_BURSTS.size()])
+	_test_burst += 1
 
 
 ## Plays one of the surfer's animations from SurferSprites (temporary: step 6 picks them from how they ride).
@@ -132,11 +166,8 @@ func _place_surfer_and_spray() -> void:
 	var slope := rad_to_deg(atan2(behind_px.y - ahead_px.y, behind_px.x - ahead_px.x))
 	_surfer.set_ground_angle(clampf(slope, -MAX_GROUND_ANGLE, MAX_GROUND_ANGLE))
 
-	var crest_px := _stage.project(model.crest_point(0.0))
 	var pixels_per_meter := (feet_px.y - head_px.y) / WaveModel.SURFER_HEIGHT
-	var spray_material := _spray.material as ShaderMaterial
-	spray_material.set_shader_parameter("centre", Vector2(crest_px.x / size.x * (size.x / size.y), crest_px.y / size.y))
-	spray_material.set_shader_parameter("radius", minf(model.height() * 0.7 * pixels_per_meter / size.y, 0.30))
+	_spray.follow(feet_px + (BOARD_TAIL * pixels_per_meter).rotated(_surfer.rotation), pixels_per_meter, TRAVEL_SPEED * size.y * WAKE_DRIFT_FACTOR)
 
 
 ## Up and down change the size, [ and ] the hollowness, left and right slide the surfer along the
@@ -187,6 +218,8 @@ func _apply_mood() -> void:
 			entry.material.set_shader_parameter(name, mood.get(name))
 	for ridge in _ridges:
 		ridge.apply_mood(mood)
+	_spray.apply_mood(mood)
+	_wave_spray.apply_mood(mood)
 
 
 ## A number from the page URL (for example ?size=0.8), or `fallback` when it is missing.

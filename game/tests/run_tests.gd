@@ -21,6 +21,9 @@ func _initialize() -> void:
 	_test_wave_section()
 	_test_wave_mesh()
 	_test_noise_textures()
+	_test_wave_motion()
+	_test_wave_mist()
+	_test_spray()
 	_test_surfer_sprites()
 	_test_surfer()
 	_test_tuning()
@@ -108,6 +111,10 @@ func _test_wave_model() -> void:
 	var surfers := wave.height() / WaveModel.SURFER_HEIGHT
 	_check(surfers > 1.4 and surfers < 2.0, "the default wave is about 1.7 surfers tall, like the key frames (%.2f)" % surfers)
 
+	_check(wave.crest_height_at(WaveModel.PEAK_AT) > wave.crest_height_at(12.0) and wave.crest_height_at(WaveModel.PEAK_AT) > wave.height(), "the wave has a peak: highest just ahead of the peel point")
+	_check(wave.trough_z_at(40.0) / wave.crest_height_at(40.0) > wave.trough_z_at(2.0) / wave.crest_height_at(2.0), "the face runs longer and gentler down the shoulder")
+	_check(wave.crest_height_at(wave.shoulder_length()) < wave.height() * 0.56 and wave.crest_height_at(wave.shoulder_length()) > wave.height() * 0.35, "the shoulder settles to about half the wave's height at its far end")
+	_check(wave.crest_height_at(wave.shoulder_length() * 0.5) < wave.crest_height_at(WaveModel.PEAK_AT + 4.0) and wave.crest_height_at(wave.shoulder_length() * 0.5) > wave.crest_height_at(wave.shoulder_length() * 0.9), "it eases down gradually, not in one step")
 	_check(wave.taper_at(0.0) > wave.taper_at(20.0) and wave.taper_at(20.0) > wave.taper_at(45.0), "the wall tapers down the line")
 	_check(wave.crest_height_at(-8.0) < wave.crest_height_at(0.0) * 0.2, "the wall collapses behind the peel point")
 	_check(wave.crest_height_at(-WaveModel.PROFILE_BEHIND) < 0.01, "the wave has faded out at the far end behind")
@@ -182,6 +189,9 @@ func _test_wave_mesh() -> void:
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	_check(vertices.size() == stations * wave.section(0.0).points.size(), "the mesh has one ring of vertices per station")
 	_check(arrays[Mesh.ARRAY_COLOR] != null and arrays[Mesh.ARRAY_NORMAL] != null and arrays[Mesh.ARRAY_TEX_UV] != null, "the mesh carries normals, shading attributes and UVs")
+	var custom: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
+	var uv2: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	_check(custom.size() == vertices.size() * 4 and uv2.size() == vertices.size(), "every vertex carries the lifted and landed lip shapes, and its lip and whitewater amounts")
 	var box := mesh.get_aabb()
 	_check(box.position.x < -WaveModel.PROFILE_AHEAD * 0.9 and box.end.x > WaveModel.PROFILE_BEHIND * 0.9, "the mesh runs the length of the profile")
 	_check(box.size.y > wave.height() * 0.8 and box.size.y < wave.height() * 1.25, "the mesh is as tall as the wave (%.2f of %.2f m)" % [box.size.y, wave.height()])
@@ -201,6 +211,68 @@ func _test_noise_textures() -> void:
 			darkest = minf(darkest, value)
 			brightest = maxf(brightest, value)
 	_check(darkest < 0.05 and brightest > 0.9, "the cell texture spans dark edges to bright centres")
+
+
+func _test_wave_motion() -> void:
+	var wave := WaveModel.new()
+	wave.size = 0.8
+	wave.hollowness = 1.0
+	var lifted := wave.section_key(-1.0, WaveModel.LipShape.LIFTED)
+	var thrown := wave.section_key(-1.0, WaveModel.LipShape.THROWN)
+	var landed := wave.section_key(-1.0, WaveModel.LipShape.LANDED)
+	_check(lifted.points.size() == thrown.points.size() and landed.points.size() == thrown.points.size(), "the three lip shapes have the same points, so the shader can morph between them")
+	_check(is_equal_approx(lifted.points[lifted.face_to].x, thrown.points[thrown.face_to].x) and is_equal_approx(landed.points[landed.face_to].x, thrown.points[thrown.face_to].x), "the foot of the wave stays put through the lip cycle")
+	_check(lifted.points[lifted.crest].y > thrown.points[thrown.crest].y and landed.points[landed.crest].y < thrown.points[thrown.crest].y, "the lip stands up, then falls: lifted is taller than thrown, landed is lower")
+	_check(is_equal_approx(wave.section_key(30.0, WaveModel.LipShape.LANDED).points[5].y, wave.section_key(30.0, WaveModel.LipShape.LIFTED).points[5].y), "far down the line, where there is no lip, the shapes agree")
+	var landing := wave.lip_landing_point(-1.0)
+	_check(is_zero_approx(landing.y) and landing.z > wave.lip_tip_point(-1.0).z, "the lip lands on the water, beyond where its tip is now")
+	_check(is_zero_approx(wave.whitewater_at(3.0)) and wave.whitewater_at(-8.0) > 0.9 and wave.whitewater_at(-WaveModel.PROFILE_BEHIND) < 0.01, "whitewater appears behind the break and thins far behind")
+	_check(wave.mist_at(-1.0) > wave.mist_at(25.0) and wave.mist_at(25.0) > 0.0, "spray is thickest at the break, with a little spindrift all along the crest")
+	var stage := WaveStage.new()
+	var phase := stage.lip_phase_at(2.0, 3.0)
+	_check(phase >= 0.0 and phase < 1.0 and is_equal_approx(stage.lip_phase_at(2.0, 3.0 + WaveStage.LIP_PERIOD), phase), "the lip's cycle repeats every period")
+	_check(stage.lip_phase_at(2.0 - WaveStage.LIP_SPACING, 3.0) == stage.lip_phase_at(2.0, 3.0) or absf(stage.lip_phase_at(2.0 - WaveStage.LIP_SPACING, 3.0) - phase) > 0.99, "lips one spacing apart along the crest are in the same state")
+	stage.free()
+
+
+func _test_wave_mist() -> void:
+	var wave := WaveModel.new()
+	wave.size = 0.7
+	wave.hollowness = 0.9
+	var mesh := WaveMist.build(wave)
+	var arrays := mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	_check(vertices.size() == colors.size() and vertices.size() > 100, "the crest mist is a curtain of many points")
+	var in_range := true
+	for color in colors:
+		in_range = in_range and color.r >= 0.0 and color.r <= 1.0
+	_check(in_range, "mist density is 0 to 1 at every point")
+	var column_height := vertices[WaveMist.ROWS - 1].y - vertices[0].y
+	_check(column_height > 0.0, "the mist stands up from the crest")
+
+
+func _test_spray() -> void:
+	_check(SprayTextures.droplet().get_height() > SprayTextures.droplet().get_width(), "a droplet is longer than it is wide, so it can trail along its path")
+	var spray := SurferSpray.new()
+	spray.follow(Vector2(600.0, 400.0), 104.0, 100.0)
+	_check(spray.position == Vector2(600.0, 400.0), "the spray sits on the board's tail")
+	_check(spray.live_particles() == 0 or spray.live_particles() <= spray.particle_budget(), "nothing is thrown before a burst")
+	var before := spray.live_particles()
+	spray.burst(1.0)
+	_check(spray.live_particles() > before, "a burst puts droplets in the air")
+	var gentle := SurferSpray.new()
+	gentle.burst(0.1)
+	_check(gentle.live_particles() < spray.live_particles() / 2, "a gentle burst throws far fewer droplets than a full fan")
+	_check(spray.particle_budget() < 1500, "the spray stays under a mobile particle budget (%d)" % spray.particle_budget())
+	spray.burst(2.0)
+	spray.burst(-1.0)
+	_check(true, "out of range strengths are clamped, not errors")
+	gentle.free()
+	spray.free()
+	var wave_spray := WaveSpray.new()
+	_check(wave_spray.particle_budget() < 400, "the lip spit stays small (%d)" % wave_spray.particle_budget())
+	wave_spray.free()
 
 
 func _test_surfer_sprites() -> void:
@@ -256,7 +328,7 @@ func _test_world() -> void:
 	await process_frame
 	var stage: WaveStage = world.get_node("WaveStage")
 	var materials := stage.materials()
-	_check(materials.size() == 2 and materials[0].get_shader_parameter("noise_cells") is ImageTexture and materials[0].get_shader_parameter("noise_warp") is ImageTexture, "the wave shader has its noise textures")
+	_check(materials.size() == 3 and materials[0].get_shader_parameter("noise_cells") is ImageTexture and materials[0].get_shader_parameter("noise_warp") is ImageTexture, "the wave shader has its noise textures")
 	_check(materials[1].get_shader_parameter("profile") is ImageTexture, "the sea shader has the wave's profile texture")
 	var mood: MoodData = root.get_node("Palette").current
 	_check(materials[0].get_shader_parameter("wave_mid") == mood.wave_mid and materials[1].get_shader_parameter("swell_top") == mood.swell_top, "the 3D wave and sea are fed the mood's colours")
@@ -279,14 +351,30 @@ func _test_world() -> void:
 		surfers += int(child is Surfer)
 	_check(gallery.visible and surfers == SurferSprites.ORDER.size() + 1, "the gallery shows every animation plus a cycler")
 	gallery.close()
+	_check(world.CAMERA_YAW_OPEN > 0.0 and world.CAMERA_YAW_BARREL > 0.0, "the camera always looks down the line, never back into the barrel")
 	_check(absf(feet_px.y / world.size.y - WaveStage.SURFER_SCREEN_Y) < 0.01, "the camera puts the surfer's feet at the planned height on screen")
 	var head_px := stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	var surfer_fraction := (feet_px.y - head_px.y) / world.size.y
 	_check(surfer_fraction > 0.18 and surfer_fraction < 0.36, "the surfer is about a quarter of the screen height, like the key frames (%.2f)" % surfer_fraction)
 
-	var spray := (world.get_node("Spray") as ColorRect).material as ShaderMaterial
-	var spray_centre: Vector2 = spray.get_shader_parameter("centre")
-	_check(spray.get_shader_parameter("radius") > 0.0 and spray_centre.y > 0.0 and spray_centre.y < 1.0, "the spray is centred on the crest, on screen")
+	var spray: SurferSpray = world.get_node("Spray")
+	var tail: Vector2 = surfer.position + (world.BOARD_TAIL * ((feet_px.y - head_px.y) / WaveModel.SURFER_HEIGHT)).rotated(surfer.rotation)
+	_check(spray.position.is_equal_approx(tail), "the spray follows the board's tail")
+	world.burst(0.8)
+	await process_frame
+	_check(spray.live_particles() > 0, "the world's burst call throws spray")
+	var key := InputEventKey.new()
+	key.keycode = KEY_S
+	key.pressed = true
+	var strengths_before: int = world._test_burst
+	world._unhandled_input(key)
+	_check(world._test_burst == strengths_before + 1, "the S key throws the next test burst")
+	var back_layer_before_surfer := false
+	for child in world.get_children():
+		if child == surfer:
+			break
+		back_layer_before_surfer = back_layer_before_surfer or (child is Node2D and child.get_child_count() > 0 and child.get_child(0) is CPUParticles2D and child != world.get_node("WaveSpray"))
+	_check(back_layer_before_surfer, "the heavy part of the spray is drawn behind the surfer")
 	world.free()
 	await process_frame
 

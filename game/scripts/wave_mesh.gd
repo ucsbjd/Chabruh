@@ -7,6 +7,12 @@ extends RefCounted
 ## wave, foam, how deep inside the barrel it is, and how thin (translucent) the water is. The
 ## UVs are (distance along the outline, distance along the crest) in meters, so a texture
 ## laid on the mesh is foreshortened by perspective for free.
+##
+## The vertex positions are the thrown lip. Two more shapes ride along so the shader can make the
+## lip lift, throw and fall without a rebuild: CUSTOM0 holds (y, z) of the lifted shape and then
+## of the landed shape, and UV2 holds (how much lip there is here, how much whitewater).
+
+const CUSTOM_FORMAT := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
 
 
 ## Distances d (meters ahead of the peel point) of the stations, from far behind to far ahead.
@@ -23,23 +29,41 @@ static func station_distances() -> PackedFloat32Array:
 static func build(model: WaveModel) -> ArrayMesh:
 	var distances := station_distances()
 	var sections: Array[WaveSection] = []
+	var lifted: Array[WaveSection] = []
+	var landed: Array[WaveSection] = []
 	for d in distances:
-		sections.append(model.section(d))
+		var thrown := model.section(d)
+		sections.append(thrown)
+		# Where there is no lip the three shapes are the same, so do the work once.
+		var has_lip := model.throw_at(d) > 0.0
+		lifted.append(model.section_key(d, WaveModel.LipShape.LIFTED) if has_lip else thrown)
+		landed.append(model.section_key(d, WaveModel.LipShape.LANDED) if has_lip else thrown)
 	var per_station := sections[0].points.size()
 
 	var vertices := PackedVector3Array()
 	var colors := PackedColorArray()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
+	var custom := PackedFloat32Array()
 	for i in distances.size():
 		var section := sections[i]
-		var along := 0.0
+		var lip_here := model.throw_at(distances[i])
+		var whitewater := model.whitewater_at(distances[i])
+		# Distance along the outline, counted from the lip's tip: positive down the face, negative over
+		# the back, so the shader can make a pattern climb toward the tip from both sides.
+		var along := PackedFloat32Array([0.0])
+		for j in range(1, per_station):
+			along.append(along[j - 1] + section.points[j].distance_to(section.points[j - 1]))
+		var from_tip := along[section.lip_tip]
 		for j in per_station:
 			var p := section.points[j]
-			if j > 0:
-				along += p.distance_to(section.points[j - 1])
 			vertices.append(Vector3(-distances[i], p.y, p.x))
 			colors.append(Color(section.height_fraction[j], section.foam[j], section.cavity[j], section.translucency[j]))
-			uvs.append(Vector2(along, -distances[i]))
+			uvs.append(Vector2(along[j] - from_tip, -distances[i]))
+			uv2s.append(Vector2(lip_here, whitewater))
+			var up := lifted[i].points[j]
+			var down := landed[i].points[j]
+			custom.append_array(PackedFloat32Array([up.y, up.x, down.y, down.x]))
 
 	var normals := PackedVector3Array()
 	normals.resize(vertices.size())
@@ -64,9 +88,11 @@ static func build(model: WaveModel) -> ArrayMesh:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	arrays[Mesh.ARRAY_CUSTOM0] = custom
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, CUSTOM_FORMAT)
 	return mesh
 
 

@@ -13,6 +13,8 @@ static func cells() -> ImageTexture:
 	noise.noise_type = FastNoiseLite.TYPE_CELLULAR
 	noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
 	noise.cellular_jitter = 1.0
+	# Fractal layers would smear the cell edges into marble; the key frames want crisp polygons.
+	noise.fractal_type = FastNoiseLite.FRACTAL_NONE
 	noise.frequency = 0.035
 	noise.seed = 7
 	return _texture(noise)

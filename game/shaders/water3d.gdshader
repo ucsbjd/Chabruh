@@ -37,11 +37,19 @@ void fragment() {
 	float swell = texture(noise_warp, flow * 0.012).r;
 	vec3 col = mix(swell_deep.rgb, swell_top.rgb, smoothstep(0.30, 0.70, swell));
 
+	// The sea reflects the sky in big patches: violet and pink under the horizon haze, gold where
+	// the sun's light lands, like the foreground of the key frame.
+	float tint = texture(noise_warp, flow * 0.02 + vec2(0.37, 0.11)).r;
+	float far_amount = smoothstep(14.0, 120.0, dist);
+	vec3 sky_violet_patch = mix(foam_shade.rgb, sea_horizon.rgb, 0.45);
+	col = mix(col, sky_violet_patch, smoothstep(0.52, 0.72, tint) * 0.55 * far_amount);
+	col = mix(col, sun_glint.rgb, smoothstep(0.72, 0.86, texture(noise_warp, flow * 0.045 + 0.6).r) * 0.45 * far_amount);
+
 	// A lace of pale cell-edge lines, thinning out with distance so they never shimmer.
-	float cell = texture(noise_cells, flow * 0.04).r;
-	float width = 0.13 + fwidth(cell) * 2.2;
+	float cell = texture(noise_cells, flow * 0.03).r;
+	float width = 0.035 + fwidth(cell) * 1.4;
 	float lace = (1.0 - smoothstep(0.0, width, cell)) * (1.0 - smoothstep(70.0, 260.0, dist));
-	col = mix(col, swell_line.rgb, lace * 0.75);
+	col = mix(col, mix(swell_line.rgb, foam_lit.rgb, 0.55), lace * 0.7);
 
 	// Shadow and foam around the base of the wave, where the profile says it is.
 	float d = clamp((-wpos.x - profile_d0) / (profile_d1 - profile_d0), 0.0, 1.0);
@@ -51,9 +59,10 @@ void fragment() {
 	col = mix(col, wave_shadow.rgb, near_wave * 0.35);
 
 	float ragged = texture(noise_warp, flow * 0.09).r - 0.5;
-	float wash = (1.0 - smoothstep(0.0, 0.7 + pr.a * 2.6, from_trough + ragged * 1.2)) * step(0.0, from_trough + 0.5);
+	float lumps = texture(noise_warp, flow * 0.25 + vec2(time * 0.08, 0.0)).r - 0.5;   // the churned water is choppy, not smooth
+	float wash = (1.0 - smoothstep(0.0, 0.7 + pr.a * 4.2, from_trough + ragged * (1.2 + pr.a * 3.0) + lumps * pr.a * 2.5)) * step(0.0, from_trough + 0.5);
 	float foam_amount = wash * (0.15 + 0.85 * pr.a);
-	float clump = smoothstep(0.02, 0.10, texture(noise_cells, flow * 0.16).r);
+	float clump = smoothstep(0.0, 0.5, texture(noise_warp, flow * 0.12).r);
 	col = mix(col, mix(foam_lit.rgb, foam_shade.rgb, (1.0 - clump) * 0.6), clamp(foam_amount * step(0.5, pr.r) * 1.4, 0.0, 1.0));
 
 	// The sun's glitter: flat dashes of light on the sea below the sun, sparse and short nearby and

@@ -28,6 +28,8 @@ extends Resource
 @export var wave_mid := Color.BLACK
 @export var wave_light := Color.BLACK
 @export var wave_glint := Color.BLACK
+## The yellow-green the sun makes of the thin top of the wave.
+@export var wave_sunlit := Color.BLACK
 ## Thin warm line along the crest.
 @export var wave_rim := Color.BLACK
 @export var hollow_dark := Color.BLACK

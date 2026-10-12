@@ -14,6 +14,9 @@ extends RefCounted
 ## throw bigger, rounder barrels; the lip is a thrown jet that lands ahead of the crest.
 
 enum Zone { SHOULDER, POCKET, BARREL, WHITEWATER }
+## The three shapes the lip cycles through: standing up as it pitches, thrown out over the trough,
+## and fallen into the whitewater. The shader morphs between them (see wave3d.gdshader).
+enum LipShape { LIFTED, THROWN, LANDED }
 
 const SURFER_HEIGHT := 1.8
 
@@ -24,10 +27,20 @@ const PROFILE_WIDTH := 512
 
 const MIN_HEIGHT := 1.4              # wave height at size 0, about 0.8 surfers
 const MAX_HEIGHT := 4.4              # wave height at size 1, about 2.4 surfers
-const SHOULDER_MIN := 0.30           # how low the wall tapers far ahead, as a fraction of its height
+const SHOULDER_FLOOR := 0.48         # what is left of the wall at the end of the shoulder, as a fraction of its height: it settles to about half, not to flat water
 const COLLAPSE_LENGTH := 4.5         # distance behind the peel point over which the wall falls apart
-const WHITEWATER_HEIGHT := 0.08      # fraction of the wall left once it has collapsed into foam
-const BUILD_LENGTH := 4.5            # distance ahead over which the lip starts to throw
+const WHITEWATER_HEIGHT := 0.16     # fraction of the wall left once it has collapsed into foam
+const PEAK_AT := 1.5                 # the highest point of the wave, just ahead of the peel point
+const PEAK_WIDTH := 6.0              # how far along the crest the peak spreads, in meters
+const PEAK_GAIN := 0.10              # how much taller the peak is than the wall around it
+const SHOULDER_RUN := 0.9            # how much longer (gentler) the face runs far down the line
+# The lip cycle: how far the lifted and landed shapes depart from the thrown one.
+const LIFT_RISE := 0.06              # the wall stands this much taller as the lip pitches
+const LIFT_CURL := 0.62              # ...with this much of the curl
+const LAND_DROP := 0.28              # the wall falls this much when the lip lands
+const LAND_CURL := 0.80              # ...with this much of the curl
+const LANDING_RUN := 0.7             # meters the lip travels on toward the beach per meter of height it still has to fall
+const BUILD_LENGTH := 9.0            # distance ahead over which the lip builds up to its throw
 const LIP_LENGTH := 7.0              # how far behind the peel point the thrown lip lasts
 const POCKET_AHEAD := 3.8            # the pocket runs from here ahead of the peel point...
 const POCKET_BEHIND := -0.4          # ...to here, just behind it
@@ -88,14 +101,14 @@ func barrel() -> float:
 
 ## How far ahead of the peel point the wall takes to taper down to its far end.
 func shoulder_length() -> float:
-	return lerpf(30.0, 52.0, size)
+	return lerpf(30.0, 46.0, size)
 
 
-## 1 at the peel point and behind it, falling to SHOULDER_MIN far ahead.
+## 1 at the peel point and behind it, easing down the shoulder until the wall has settled to about half its height.
 func taper_at(d: float) -> float:
 	if d <= 0.0:
 		return 1.0
-	return lerpf(1.0, SHOULDER_MIN, smoothstep(0.0, 1.0, d / shoulder_length()))
+	return lerpf(1.0, SHOULDER_FLOOR, smoothstep(0.0, 1.0, d / shoulder_length()))
 
 
 ## 1 at the peel point and ahead of it, falling to WHITEWATER_HEIGHT behind and then to nothing.
@@ -106,9 +119,35 @@ func collapse_at(d: float) -> float:
 	return collapsed * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
 
 
+## How much spray the crest throws at d, 0 to 1: a little spindrift all along the wall, a lot where the
+## wave is breaking, and a steady haze rising off the whitewater behind it.
+func mist_at(d: float) -> float:
+	var near_break := (d + 1.0) / 5.0
+	return clampf(0.18 * taper_at(d) + 0.82 * exp(-near_break * near_break) + 0.6 * whitewater_at(d), 0.0, 1.0)
+
+
 ## Height of the crest above the trough, in meters.
 func crest_height_at(d: float) -> float:
-	return height() * taper_at(d) * collapse_at(d) * roll_at(d)
+	return height() * taper_at(d) * collapse_at(d) * roll_at(d) * peak_at(d)
+
+
+## A gentle bump in height at the peel point: the peak, where the wave is highest and about to break.
+func peak_at(d: float) -> float:
+	var x := (d - PEAK_AT) / PEAK_WIDTH
+	return 1.0 + PEAK_GAIN * exp(-x * x)
+
+
+## 0 on the wall and the pocket, rising to 1 far down the line: the shoulder, where the face relaxes.
+func shoulder_at(d: float) -> float:
+	return smoothstep(BUILD_LENGTH, shoulder_length(), d)
+
+
+## How much of the wave has turned to whitewater at d, 0 to 1: nothing ahead of the break, all of it
+## once the wall has collapsed, then fading as the foam spreads out far behind.
+func whitewater_at(d: float) -> float:
+	if d >= 0.0:
+		return 0.0
+	return smoothstep(0.0, COLLAPSE_LENGTH, -d) * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
 
 
 ## A slow undulation along the crest, so the wall is never ruler-straight: swells in height of a few percent.
@@ -160,11 +199,39 @@ func zone_at(d: float) -> Zone:
 ## barrel), and a concave face that curls down to the trough. A circle of radius r centred at
 ## (r, y_a) gives both arcs, so a full barrel is a near-round tube whose floor is the water.
 func section(d: float) -> WaveSection:
-	return section_for(crest_height_at(d), curl_at(d), foam_at(d))
+	return section_key(d, LipShape.THROWN)
 
 
-## The same cross-section for an explicit height (meters), curl and foam amount (both 0 to 1).
-func section_for(crest_meters: float, curl: float, foam_here: float) -> WaveSection:
+## The cross-section at d in one of the lip cycle's three shapes. All three have the same points and
+## the same trough, so the shader can morph between them point by point.
+func section_key(d: float, shape: LipShape) -> WaveSection:
+	var height_here := crest_height_at(d)
+	var curl := curl_at(d)
+	var foam_here := foam_at(d)
+	var activity := throw_at(d)
+	var trough := trough_z_at(d)
+	match shape:
+		LipShape.LIFTED:
+			height_here *= 1.0 + LIFT_RISE * activity
+			curl *= LIFT_CURL
+		LipShape.LANDED:
+			height_here *= 1.0 - LAND_DROP * activity
+			curl *= LAND_CURL
+	return section_for(height_here, curl, foam_here, trough)
+
+
+## Where the foot of the wave is, in z. The face runs longer and gentler down the shoulder, and a
+## full barrel pulls the foot in to the barrel's own radius.
+func trough_z_at(d: float) -> float:
+	var wave_h := maxf(crest_height_at(d), 0.03)
+	var curl := curl_at(d)
+	var run := wave_h * lerpf(2.0, 1.1, hollowness) * (1.0 + SHOULDER_RUN * shoulder_at(d))
+	return lerpf(run, curl * BARREL_RADIUS * wave_h, curl)
+
+
+## The same cross-section for an explicit height (meters), curl and foam amount (both 0 to 1). A
+## negative `trough_override` lets the section place its own foot.
+func section_for(crest_meters: float, curl: float, foam_here: float, trough_override := -1.0) -> WaveSection:
 	var result := WaveSection.new()
 	var wave_h := maxf(crest_meters, 0.03)
 
@@ -172,7 +239,7 @@ func section_for(crest_meters: float, curl: float, foam_here: float) -> WaveSect
 	var tip_thick := wave_h * 0.012
 	var radius := curl * BARREL_RADIUS * wave_h
 	var centre_y := wave_h - radius - thick
-	var trough_z := lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius, curl)
+	var trough_z := trough_override if trough_override >= 0.0 else lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius, curl)
 	var back_len := wave_h * BACK_RUN
 	var theta_start := deg_to_rad(105.0)
 	var theta_tip := deg_to_rad(lerpf(90.0, -40.0, curl))
@@ -248,6 +315,13 @@ func lip_tip_point(d: float) -> Vector3:
 	return Vector3(-d, p.y, p.x)
 
 
+## Where the thrown lip lands on the water: the tip falls on past where it is now, along its
+## heading, and the spit and splash happen there. A world position at sea level.
+func lip_landing_point(d: float) -> Vector3:
+	var tip := lip_tip_point(d)
+	return Vector3(tip.x, 0.0, tip.z + tip.y * LANDING_RUN)
+
+
 ## The profile as a PROFILE_WIDTH by 1 image, sampled from -PROFILE_BEHIND to +PROFILE_AHEAD:
 ## red is the crest height in meters, green is where the trough is (z), blue the curl and
 ## alpha the foam. Shaders use it to put foam and shadow where the wave is.
@@ -256,9 +330,7 @@ func bake_profile() -> Image:
 	for i in PROFILE_WIDTH:
 		var d := sample_distance(i)
 		var curl := curl_at(d)
-		var wave_h := crest_height_at(d)
-		var trough_z := lerpf(wave_h * lerpf(2.0, 1.1, hollowness), curl * BARREL_RADIUS * wave_h, curl)
-		image.set_pixel(i, 0, Color(wave_h, trough_z, curl, foam_at(d)))
+		image.set_pixel(i, 0, Color(crest_height_at(d), trough_z_at(d), curl, foam_at(d)))
 	return image
 
 

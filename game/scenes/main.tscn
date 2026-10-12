@@ -4,7 +4,8 @@
 [ext_resource type="Script" path="res://scripts/ridge_layer.gd" id="2_ridge"]
 [ext_resource type="Script" path="res://scripts/debug_fps.gd" id="3_fps"]
 [ext_resource type="Script" path="res://scripts/wave_stage.gd" id="10_stage"]
-[ext_resource type="Shader" path="res://shaders/spray.gdshader" id="13_spray"]
+[ext_resource type="Script" path="res://scripts/surfer_spray.gd" id="13_spray"]
+[ext_resource type="Script" path="res://scripts/wave_spray.gd" id="15_wavespray"]
 [ext_resource type="Script" path="res://scripts/surfer.gd" id="11_surfer"]
 [ext_resource type="Script" path="res://scripts/pose_gallery.gd" id="14_gallery"]
 [ext_resource type="Script" path="res://scripts/debug_panel.gd" id="12_panel"]
@@ -24,9 +25,6 @@ shader = ExtResource("8_grade")
 
 [sub_resource type="ShaderMaterial" id="mat_grain"]
 shader = ExtResource("9_grain")
-
-[sub_resource type="ShaderMaterial" id="mat_spray"]
-shader = ExtResource("13_spray")
 
 [node name="World" type="Control"]
 layout_mode = 3
@@ -76,18 +74,14 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("10_stage")
 
+[node name="WaveSpray" type="Node2D" parent="."]
+script = ExtResource("15_wavespray")
+
 [node name="Surfer" type="Node2D" parent="."]
 script = ExtResource("11_surfer")
 
-[node name="Spray" type="ColorRect" parent="."]
-material = SubResource("mat_spray")
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
+[node name="Spray" type="Node2D" parent="."]
+script = ExtResource("13_spray")
 
 [node name="PoseGallery" type="Control" parent="."]
 layout_mode = 1

@@ -7,6 +7,7 @@ extends Control
 
 const WAVE_SHADER := preload("res://shaders/wave3d.gdshader")
 const WATER_SHADER := preload("res://shaders/water3d.gdshader")
+const MIST_SHADER := preload("res://shaders/mist3d.gdshader")
 
 ## Camera: a long lens, so perspective is gentle but clear. Distances are meters.
 const CAMERA_DISTANCE := 19.0
@@ -15,6 +16,12 @@ const HORIZON_Y := 0.40                  # where the horizon sits on screen, 0 t
 ## How far down the screen the surfer's feet sit, as a fraction of the height.
 const SURFER_SCREEN_Y := 0.70
 const SEA_SCROLL_SPEED := 6.0            # meters per second the sea slides past
+## The lip's cycle (see wave3d.gdshader): seconds from one lift to the next, and meters along the crest
+## between lips in the same state. Spray that follows the lip reads the same numbers.
+const LIP_PERIOD := 5.5
+const LIP_SPACING := 15.0
+## How far into the cycle the lip has fallen and landed, where the spit happens.
+const LIP_LANDING_PHASE := 0.68
 
 ## The model that shapes this wave. Change its size and hollowness, then call rebuild().
 var model := WaveModel.new()
@@ -23,9 +30,11 @@ var _viewport := SubViewport.new()
 var _camera := Camera3D.new()
 var _wave_mesh := MeshInstance3D.new()
 var _water_mesh := MeshInstance3D.new()
+var _mist_mesh := MeshInstance3D.new()
 var _picture := TextureRect.new()
 var _wave_material := ShaderMaterial.new()
 var _water_material := ShaderMaterial.new()
+var _mist_material := ShaderMaterial.new()
 var _profile: ImageTexture
 var _cells: ImageTexture
 var _warp: ImageTexture
@@ -47,8 +56,12 @@ func _init() -> void:
 
 	_wave_material.shader = WAVE_SHADER
 	_water_material.shader = WATER_SHADER
+	_mist_material.shader = MIST_SHADER
 	_wave_mesh.material_override = _wave_material
 	_viewport.add_child(_wave_mesh)
+	_mist_mesh.material_override = _mist_material
+	_mist_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_viewport.add_child(_mist_mesh)
 
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(8000.0, 8000.0)
@@ -75,6 +88,8 @@ func _ready() -> void:
 	_water_material.set_shader_parameter("profile", _profile)
 	_water_material.set_shader_parameter("profile_d0", -WaveModel.PROFILE_BEHIND)
 	_water_material.set_shader_parameter("profile_d1", WaveModel.PROFILE_AHEAD)
+	_wave_material.set_shader_parameter("lip_period", LIP_PERIOD)
+	_wave_material.set_shader_parameter("lip_spacing", LIP_SPACING)
 	resized.connect(_fit_viewport)
 	_fit_viewport()
 	rebuild()
@@ -95,13 +110,20 @@ func _exit_tree() -> void:
 
 ## The two shader materials, so the world can feed them the mood's colours.
 func materials() -> Array[ShaderMaterial]:
-	return [_wave_material, _water_material]
+	return [_wave_material, _water_material, _mist_material]
 
 
 ## Rebuilds the mesh and profile after the model's size or hollowness changed.
 func rebuild() -> void:
 	_wave_mesh.mesh = WaveMesh.build(model)
+	_mist_mesh.mesh = WaveMist.build(model)
 	_profile.update(model.bake_profile())
+
+
+## Where in its cycle the lip is at d, 0 to 1, right now: the same number the shader computes.
+## It reaches LIP_LANDING_PHASE as the lip falls.
+func lip_phase_at(d: float, at_time: float) -> float:
+	return fposmod(at_time / LIP_PERIOD + d / LIP_SPACING, 1.0)
 
 
 ## Points the camera so that `focus` (the surfer's feet, in world meters) lands at `screen_x` (a

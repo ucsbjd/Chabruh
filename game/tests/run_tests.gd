@@ -465,7 +465,7 @@ func _test_world() -> void:
 	_check(is_equal_approx(surfer.scale.y * Surfer.STANDING_HEIGHT, feet_px.y - stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0)).y), "the surfer is the standard 1.8 m tall on screen")
 	_check(absf(rad_to_deg(surfer.rotation)) <= world.MAX_GROUND_ANGLE, "the surfer tilts with the face, but never past the limit")
 	world.set_surfer_pose("nonsense")
-	_check(surfer.pose_name() == SurferSprites.ORDER[0], "the scene ignores an animation name that does not exist")
+	_check(surfer.pose_name() == world.DEFAULT_POSE, "the scene ignores an animation name that does not exist")
 	var gallery: PoseGallery = world.get_node("PoseGallery")
 	_check(not gallery.visible, "the pose gallery stays hidden unless asked for")
 	gallery.open()

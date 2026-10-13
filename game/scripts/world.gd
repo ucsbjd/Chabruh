@@ -32,7 +32,7 @@ const HOLLOW_RATE := 0.4
 const DEFAULT_SIZE := 0.6
 const DEFAULT_HOLLOW := 0.5
 const DEFAULT_PEEL_OFFSET := 3.0
-const DEFAULT_POSE := "ride"
+const DEFAULT_POSE := "placeholder"
 ## The surfer sits on the face at an angle that follows the wave, but never tips past this, in degrees.
 const MAX_GROUND_ANGLE := 14.0
 ## Where the board's tail is, in meters from the board's centre (right and down, before the board tilts):

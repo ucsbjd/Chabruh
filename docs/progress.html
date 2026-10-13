@@ -345,7 +345,7 @@ const STEPS = [
       "The body: try the free MPFB (MakeHuman for Blender) human with a Rigify rig; verify its output license first. If it gets fiddly, build a chunky stylised body by script instead.",
       "Shorts, hair, tattoo and a rainbow shortboard in regions (so the mask pass can recolour them). The feet are held to the board by IK, and the board is the parent, so the stance stays glued to it.",
       "Look test: six poses rendered and compared with the key frames kling-04 and 05. Gate: if it does not look better than the Kling sprite, fall back to keeping the Kling sprites plus a flat toon filter, and say so.",
-      "Reference frames from the footage used before can be run through MediaPipe (on the CPU) to guide key poses."
+      "Reference frames from real surfing footage can be run through MediaPipe (on the CPU) to guide key poses; the full motion plan is in step 9."
     ],
     notNow: ["The full set of moves."],
     verify: [
@@ -358,7 +358,9 @@ const STEPS = [
     title: "Surfer foundry 3: the moves and the pose grid, in the game",
     goal: "The three moves and continuous control: bottom turn, top turn, cutback as short clips, and a grid of stances so the surfer leans and crouches continuously with the player's hands.",
     build: [
-      "Key poses for each move from reference frames, rendered as short clips (about 16 to 24 frames each at 12 fps) plus a trim loop.",
+      "Where the motion comes from, in order of trust (all free, all running on this laptop's CPU). (1) Snapshots: pick sharp stills of real surfers doing each move from the footage (a handful of key poses per move; reference only, never committed or shipped). MediaPipe reads the body landmarks, a script turns them into joint angles for the rig, and a render, overlay, adjust loop checks each pose against its still. Blender interpolates between the key poses with IK holding the feet to the board. (2) Clips: MediaPipe on every frame of a cut clip, smoothed, as a rough guide and for timing. BlendArMocap (free, Rigify only, unmaintained, Blender 4.5 unverified) is an optional shortcut to test, never relied on. (3) Optional spike, only after the three surf moves work: UniMate, see the note below.",
+      "UniMate (github.com/Friedrich-M/UniMate, tutorial video InfibEoiDEs) is NOT in the main workflow. It turns a text prompt and a rigged character into motion and can fill in between key poses, but it takes no video or photos as input, it needs conda and Python 3.10 (GPU needs are not stated and this laptop has no NVIDIA GPU), a custom rig needs preprocessing, its checkpoints are non-commercial (CC BY-NC 4.0), its own README calls it an early step where many motions fail, and its clips are about 60 frames with no board or stance awareness. If tried at all, do it as a time-boxed spike for generic motions such as paddle, pop-up and wipeout, and only if it runs here and the licence allows what we ship.",
+      "Key poses for each move, rendered as short clips (about 16 to 24 frames each at 12 fps) plus a trim loop.",
       "A pose grid (stance low to high, lean left to right, about 9 stills) so the game can pick and cross-fade by the rider's height and turn, not just play clips.",
       "Wire it to the Rider's move labels, with a 0.1 s cross-dissolve between clips. The surfer's body, board tilt and the spray tail point stay consistent.",
       "Revisit the controls now that the animations exist: the two trackpad fingers are the surfer's two feet on the board, so think about what each foot does (front foot steers, back foot drives or pumps), re-run tools/calibrate.ps1 and tools/replay.ps1 with the new moves, and retune data/tuning.tres. Make the lean and tilt follow the move labels.",
@@ -367,6 +369,7 @@ const STEPS = [
     notNow: ["Wipeouts, paddling, airs, barrel poses (they come with their own steps)."],
     verify: [
       "Riding up and down the wave, the surfer's body follows continuously, and the bottom turn, top turn and cutback each play when I do them.",
+      "For each key pose, a side-by-side of the real surfer still and our rig in the same pose, so I can see the moves are matched to real athletic form.",
       "No visible jumps between clips, the surfer stays on the face, and it is smooth on my phone."
     ]
   },

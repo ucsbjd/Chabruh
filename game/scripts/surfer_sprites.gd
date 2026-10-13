@@ -16,21 +16,29 @@ const FRAME_METERS := 1.85
 const PERSON_METERS := 1.8
 
 ## frames: how many PNGs; fps: playback speed; ping_pong: play forward then backward, so a clip that does not
-## end where it started still loops without a jump.
+## end where it started still loops without a jump. format: "flat" is a finished picture (the Kling frames);
+## "toon" is the foundry's packed pair of passes (twice the frame width, see shaders/surfer_toon.gdshader and
+## docs/foundry.md), tinted by the mood.
 const ANIMATIONS := {
-	"ride": {"frames": 35, "fps": 12.0, "ping_pong": true},
+	"ride": {"frames": 35, "fps": 12.0, "ping_pong": true, "format": "flat"},
+	"placeholder": {"frames": 8, "fps": 8.0, "ping_pong": false, "format": "toon"},
 }
 
 ## The order the gallery and the P key step through.
-const ORDER: Array[String] = ["ride"]
+const ORDER: Array[String] = ["ride", "placeholder"]
 
 const LABELS := {
 	"ride": "ride",
+	"placeholder": "placeholder (toon)",
 }
 
 
 static func has_animation(animation_name: String) -> bool:
 	return ANIMATIONS.has(animation_name)
+
+
+static func is_toon(animation_name: String) -> bool:
+	return ANIMATIONS.has(animation_name) and ANIMATIONS[animation_name].format == "toon"
 
 
 static func frame_path(animation_name: String, index: int) -> String:

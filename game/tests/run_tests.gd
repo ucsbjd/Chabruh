@@ -404,7 +404,16 @@ func _test_surfer_sprites() -> void:
 			found = found and texture != null
 			if texture == null:
 				continue
-			sized = sized and Vector2(texture.get_size()) == SurferSprites.FRAME_SIZE
+			var toon := SurferSprites.is_toon(animation_name)
+			var expected := Vector2(SurferSprites.FRAME_SIZE.x * (2.0 if toon else 1.0), SurferSprites.FRAME_SIZE.y)
+			sized = sized and Vector2(texture.get_size()) == expected
+			if toon:
+				# Toon frames hold the figure in the left half and data in the right, so look at the left half only.
+				var left := texture.get_image().get_region(Rect2i(0, 0, int(SurferSprites.FRAME_SIZE.x), int(SurferSprites.FRAME_SIZE.y)))
+				var covered := left.get_used_rect()
+				on_anchor = on_anchor and absf((covered.position.y + covered.size.y) - SurferSprites.ANCHOR.y) < 14.0
+				visible_figure = visible_figure and covered.size.y > SurferSprites.FRAME_SIZE.y * 0.3
+				continue
 			# The pipeline puts every frame's board on the anchor, so the lowest solid pixel is at the anchor's row.
 			var used := texture.get_image().get_used_rect()
 			on_anchor = on_anchor and absf((used.position.y + used.size.y) - SurferSprites.ANCHOR.y) < 14.0

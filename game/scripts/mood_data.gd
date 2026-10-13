@@ -37,6 +37,16 @@ extends Resource
 @export var foam_lit := Color.BLACK
 @export var foam_shade := Color.BLACK
 
+@export_group("Surfer")
+@export var surfer_skin := Color.BLACK
+@export var surfer_shorts := Color.BLACK
+@export var surfer_board := Color.BLACK
+@export var surfer_hair := Color.BLACK
+## Warm tint on the lit band, the violet in the shade band, and the thin light along the sunward edge.
+@export var surfer_light := Color.BLACK
+@export var surfer_shade := Color.BLACK
+@export var surfer_rim := Color.BLACK
+
 @export_group("Foreground swell")
 @export var swell_top := Color.BLACK
 @export var swell_deep := Color.BLACK

@@ -8,12 +8,15 @@ extends Node2D
 ## Frame pixels in a 1.8 m person: `place()` scales the sprite so that many pixels become `pixels_tall`.
 static var STANDING_HEIGHT := SurferSprites.person_pixels()
 
+## Tints the toon frames; world.gd feeds it the mood. Only used while a toon animation plays.
+var toon_material := ShaderMaterial.new()
 var _sprite := AnimatedSprite2D.new()
 var _pose_name := ""
 
 
 func _init() -> void:
 	# Everything is attached here, not in _ready, so a surfer that is never started cannot orphan nodes.
+	toon_material.shader = load("res://shaders/surfer_toon.gdshader") as Shader
 	_sprite.centered = false
 	_sprite.offset = -SurferSprites.ANCHOR
 	_sprite.sprite_frames = _build_frames()
@@ -26,6 +29,7 @@ func set_pose(pose_name: String) -> void:
 	if not SurferSprites.has_animation(pose_name) or pose_name == _pose_name:
 		return
 	_pose_name = pose_name
+	_sprite.material = toon_material if SurferSprites.is_toon(pose_name) else null
 	_sprite.play(pose_name)
 
 

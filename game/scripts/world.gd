@@ -92,6 +92,7 @@ func _ready() -> void:
 			_register(child.material)
 	for material in _stage.materials():
 		_register(material)
+	_register(_surfer.toon_material)
 	_auto_burst = UrlParams.has("autoburst")
 	if UrlParams.has("calibrate"):
 		_calibration = Calibration.new()

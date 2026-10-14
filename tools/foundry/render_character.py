@@ -36,6 +36,8 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = os.path.abspath(argv[0])
 DECALS = os.path.abspath(argv[1])
 POSE_LIMIT = int(argv[2]) if len(argv) > 2 else 99
+if len(argv) > 3:  # a debug camera yaw in degrees (90 is a side view), to inspect the rig from another side
+    CAMERA_YAW = math.radians(float(argv[3]))
 
 # Board-local layout. The deck top is DECK_Z above the origin; ankles sit ANKLE_H over the sole.
 DECK_Z = 0.08
@@ -44,15 +46,17 @@ FOOT_X = {"L": -0.40, "R": 0.36}  # left foot forward, toward the nose at -X
 # name, board roll, board pitch, board lift, hips down, hip yaw, bend forward, lean toward travel, twist, look,
 # left hand offset from the shoulder, right hand offset, (all degrees and meters, world axes: +Y is the wave)
 POSES = [
-    dict(name="trim", roll=0, pitch=3, lift=0, down=0.14, yaw=28, bend=10, lean=0, twist=-10, look=55,
+    dict(name="trim", roll=0, pitch=2, lift=0, down=0.12, yaw=26, bend=14, lean=0, twist=-8, look=50,
          hl=(-0.40, 0.18, -0.38), hr=(0.46, 0.05, -0.34)),
-    dict(name="bottom_turn", roll=-14, pitch=4, lift=0, down=0.26, yaw=30, bend=30, lean=8, twist=-20, look=60,
-         hl=(-0.32, 0.38, -0.20), hr=(0.30, 0.12, -0.48)),
-    dict(name="top_turn", roll=-36, pitch=6, lift=0, down=0.20, yaw=20, bend=16, lean=20, twist=34, look=75,
-         hl=(-0.58, 0.30, 0.02), hr=(0.46, -0.28, 0.20)),
-    dict(name="cutback", roll=22, pitch=-3, lift=0, down=0.22, yaw=36, bend=6, lean=-14, twist=-46, look=85,
-         hl=(-0.32, -0.12, 0.26), hr=(0.50, 0.44, -0.02)),
-    dict(name="barrel", roll=-10, pitch=2, lift=0, down=0.36, yaw=32, bend=42, lean=8, twist=-26, look=60,
+    # Poses 2 to 4 follow the reference clip: a low drive with the torso almost horizontal and one arm trailing,
+    # a top turn at the lip with the board on its rail and the body thrown back, a cutback with the head turned back.
+    dict(name="bottom_turn", roll=-14, pitch=2, lift=0, down=0.26, yaw=20, bend=62, lean=8, twist=-14, look=40,
+         hl=(-0.12, 0.30, -0.42), hr=(0.58, 0.02, -0.10)),
+    dict(name="top_turn", roll=-52, pitch=10, lift=0.02, down=0.22, yaw=18, bend=-6, lean=26, twist=40, look=70,
+         hl=(-0.34, 0.16, 0.12), hr=(0.40, -0.08, 0.50)),
+    dict(name="cutback", roll=16, pitch=-2, lift=0, down=0.24, yaw=36, bend=44, lean=-8, twist=-60, look=-60,
+         hl=(-0.20, 0.34, -0.34), hr=(0.52, -0.12, -0.02)),
+    dict(name="barrel", roll=-10, pitch=2, lift=0, down=0.30, yaw=30, bend=52, lean=8, twist=-24, look=55,
          hl=(-0.26, 0.40, -0.46), hr=(0.20, -0.02, -0.18)),
     dict(name="air", roll=-26, pitch=22, lift=0.12, down=0.26, yaw=24, bend=12, lean=4, twist=12, look=45,
          hl=(-0.50, 0.12, 0.36), hr=(0.50, 0.12, 0.42)),
@@ -193,7 +197,7 @@ def build_shorts(base, rig, mats):
     hip_z = max(rig.pose.bones["upperleg01.L"].head.z, 0.0)
     legs = rig.pose.bones["lowerleg01.L"].head.z
     top = hip_z + 0.07
-    hem = hip_z - 0.55 * (hip_z - legs)
+    hem = hip_z - 0.68 * (hip_z - legs)
     copy = base.copy()
     copy.data = base.data.copy()
     bpy.context.collection.objects.link(copy)
@@ -205,7 +209,7 @@ def build_shorts(base, rig, mats):
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     bm.normal_update()
     for v in bm.verts:
-        v.co += v.normal * 0.012
+        v.co += v.normal * 0.007
     xw = max(abs(v.co.x) for v in bm.verts if v.co.z > top - 0.12)
     palm = bpy.data.images.load(f"{DECALS}/palm.png")
     pw, ph = palm.size
@@ -416,7 +420,7 @@ def main():
     update()
     mats = {
         "skin": region_material("skin", 0, decal=f"{DECALS}/tattoo.png", decal_region=4,
-                                decal_box=(0.0, rig.data.bones["spine03"].head_local.z + 0.03, 0.5, 0.54)),
+                                decal_box=(0.0, rig.data.bones["spine03"].head_local.z + 0.03, 0.56, 0.60)),
         "shorts": region_material("shorts", 1), "board": region_material("board", 2), "hair": region_material("hair", 3),
         "trim": region_material("trim", 5), "stripe_a": region_material("stripe_a", 6), "stripe_b": region_material("stripe_b", 7),
     }
@@ -424,8 +428,10 @@ def main():
     base.data.materials.append(mats["skin"])
     shorts = build_shorts(base, rig, mats)
     hair = build_hair(base, rig, mats)
-    for o in [shorts]:
-        add_armature_skin(o, rig)
+    # (the copy already carries the body's Armature modifier and parent; adding another would deform it twice)
+    # Relax the stretching and pinching a bent hip puts in the shell, so the shorts hang instead of bunching.
+    relax = shorts.modifiers.new("Relax", "CORRECTIVE_SMOOTH")
+    relax.factor, relax.iterations, relax.smooth_type = 0.6, 8, "SIMPLE"
     board = build_board(mats)
     scene, cam = setup_scene()
 

@@ -40,6 +40,19 @@ Step 7 proved the pipeline with a placeholder figure; step 8 replaced it with th
   mid-thigh; the tattoo is an image decal mapped on the back in body space, so it bends with the body.
 - Not done: pocket flap, drawstring, face detail (the camera sees the back), finger poses. Twelve more moves come in step 9.
 
+## Reference footage and rig checks (step 8, second round)
+
+- The first 20 s of the JBay clip (https://www.youtube.com/watch?v=wiDVI0hUFQ0, never downloaded or committed) was
+  read in the browser pane with `tools/sprites/capture_frames.js`-style code: frames painted to a canvas, the red or
+  yellow board found by colour to follow the surfer, and a zoomed contact sheet screenshotted. The surfer is only
+  about 25 px tall in the 854 x 480 stream, so MediaPipe cannot read it; the poses were set by eye against zoomed
+  crops: a low drive with the torso almost horizontal and one arm trailing (bottom turn, about 1 s), the board on its
+  rail with the body thrown back at the lip (top turn, about 3 s), a crouched cutback with the head turned back (4.5 s).
+- Compare any pose from another side with a debug camera yaw: `blender -b --python render_character.py -- out decals 6 90`
+  (90 is a side view, 0 is straight on), then `pack_frames.py` and `check_frames.py` as usual.
+- Fixed: the shorts were deformed twice (the copy already carried the body's Armature modifier and I added a second),
+  which stretched them below the knees in crouches. They now fit the hips; a Corrective Smooth modifier relaxes bends.
+
 ## Frame format ("toon")
 
 One PNG per frame, three panels wide (468 x 420 each; taller than the Kling frames so a rolled board is not cut off,

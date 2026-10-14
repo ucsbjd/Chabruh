@@ -38,6 +38,12 @@ crest; wave height 1.4 to 4.4 m). Findings and what we do about them:
    in on the 0.12 s spring already in `Surfer3D` (so there is no pop when a label flips).
 8. **`wave.barrel_amount_at(d, u)` does not exist**; add it from `zone_at(d)` and `barrel()` (zero outside the tube).
 
+9. **Bugs found by playing it (step 10).** (a) The draft's `t_face = n_surf x t_crest` points down the face, so the board's nose
+   turned the wrong way; it is `t_crest x n_surf`. (b) The board must turn about the back foot (a pivot turn): the surface point is the
+   tail pivot and the board centre sits `0.36 m` ahead of it along the heading, so the tail stays put while the nose swings. (c) The stick
+   must be fed from the amount pushed (`RideInput.take_height_push()`), not from the clamped height, or scrolling does nothing at an end stop.
+   (d) Hand targets are relative to the shoulders and turn with the chest, never fixed in the model.
+
 ### Controls (step 11)
 1. **One virtual stick, relative deltas only.** Finger motion integrates into two numbers: `stick_y` (carve up or drop,
    which sets `input_theta`) and `stick_x` (drive or stall). Both spring back to zero when the fingers lift (the coast), so

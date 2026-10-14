@@ -24,6 +24,8 @@ const LEAD_BONES := [["spine02", 0.15], ["spine01", 0.2], ["neck01", 0.15], ["ne
 ## Hip pivot toward the nose when the nose points straight down the face, radians, and the weight shift over the front foot, meters.
 const DIVE_YAW := 1.0
 const DIVE_SHIFT := 0.12
+## From the back foot (the pivot of a turn) to the middle of the board, meters.
+const PIVOT_TO_CENTRE := 0.36
 const LEGS := [["upperleg02.L", "lowerleg01.L", "foot.L", -1.0], ["upperleg02.R", "lowerleg01.R", "foot.R", 1.0]]
 const ARMS := [["upperarm02.L", "lowerarm01.L", "wrist.L", -1.0], ["upperarm02.R", "lowerarm01.R", "wrist.R", 1.0]]
 
@@ -39,7 +41,7 @@ var _hand_offset := {-1.0: Vector3.ZERO, 1.0: Vector3.ZERO}
 var _clock := 0.0
 var _foot_target := {}  # side -> where the ankle stays, in the model's space (found from the trim pose)
 var _foot_basis := {}   # side -> how the foot sits flat on the deck, in skeleton space
-var _hand_rest := {}    # side -> where the hand rests in the trim pose, in the model's space
+var _hand_rest := {}    # side -> where the hand rests relative to its shoulder in the trim pose, in the model's space
 
 
 func _init() -> void:
@@ -63,7 +65,8 @@ func _init() -> void:
 		_foot_target[leg[3]] = to_model * skeleton.get_bone_global_pose(foot).origin
 		_foot_basis[leg[3]] = skeleton.get_bone_global_pose(foot).basis
 	for arm in ARMS:
-		_hand_rest[arm[3]] = to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[2])).origin
+		var shoulder_rest := to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[0])).origin
+		_hand_rest[arm[3]] = to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[2])).origin - shoulder_rest
 	_pose_body()
 
 
@@ -147,8 +150,8 @@ func _set_hand_offsets(bottom: float, top: float, crouch: float) -> void:
 func _place(model: WaveModel, d: float, u: float, theta: float, roll: float) -> void:
 	var normal := model.surface_normal(d, u).normalized()
 	var t_crest := Vector3(-1.0, 0.0, 0.0)  # down the line
-	var t_face := normal.cross(t_crest).normalized()  # up the face, toward the lip
-	t_crest = t_face.cross(normal).normalized()
+	var t_face := t_crest.cross(normal).normalized()  # up the face, toward the lip (and into the wave)
+	t_crest = normal.cross(t_face).normalized()
 	var forward := (t_crest * cos(theta) + t_face * sin(theta)).normalized()
 	var up := Vector3.UP.lerp(normal, FACE_ALIGN).normalized()
 	# The model's nose points down its -X and its chest toward -Z; its +X is the tail.
@@ -156,7 +159,10 @@ func _place(model: WaveModel, d: float, u: float, theta: float, roll: float) -> 
 	var basis := Basis(along, up, along.cross(up))
 	# Rolling about the board's own length puts the toe-side (wave-side) rail down for a positive roll.
 	basis = basis * Basis(Vector3.RIGHT, roll)
-	transform = Transform3D(basis, model.surface_point(d, u))
+	# The board turns about the back foot, like a pivot turn: the tail stays on the spot being ridden and the nose
+	# swings round to point where he is going, so the board centre sits ahead of the pivot along the heading.
+	var pivot := model.surface_point(d, u)
+	transform = Transform3D(basis, pivot + forward * PIVOT_TO_CENTRE)
 
 
 ## Blends the baked poses into the bones and adds the head-and-chest lead.
@@ -192,7 +198,8 @@ func _pose_body() -> void:
 	for arm in ARMS:
 		var side: float = arm[3]
 		var shoulder_model: Vector3 = to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[0])).origin
-		var hand: Vector3 = _hand_rest[side] + _hand_offset[side]
+		# Hands follow the shoulders and turn with the chest, so crouching and twisting never stretch the arms.
+		var hand: Vector3 = shoulder_model + Basis(Vector3.UP, _dive * DIVE_YAW) * (_hand_rest[side] + _hand_offset[side])
 		var elbow_dir := Vector3(side * 0.25, -0.15, 0.55)
 		_solve_two_bone(arm[0], arm[1], arm[2], to_skeleton * hand, to_skeleton * (shoulder_model + elbow_dir))
 

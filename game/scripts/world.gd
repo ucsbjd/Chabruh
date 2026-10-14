@@ -117,7 +117,7 @@ func _process(delta: float) -> void:
 	_time += delta
 	_ride_input.process(delta)
 	_read_held_keys(delta)
-	rider.step(delta, _ride_input.steer, _ride_input.height, _stage.model, _tuning)
+	rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), _stage.model, _tuning)
 	if _readout.visible:
 		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f" % [rider.move, rider.v, roundi(rad_to_deg(rider.theta)), rider.omega, rider.compression]
 	var strength := rider.take_burst()

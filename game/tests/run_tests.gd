@@ -341,19 +341,19 @@ func _test_riding() -> void:
 	var rider := Rider.new()
 	rider.place(3.0, 0.5)
 	for i in 900:
-		rider.step(1.0 / 60.0, 0.9, RideInput.REST_HEIGHT, wave, tuning)
+		rider.step(1.0 / 60.0, 0.9, 0.0, wave, tuning)
 	_check(absf(rider.d - Rider.d_for(0.9)) < 0.7, "the surfer settles where they steer along the wave (d %.2f of %.2f)" % [rider.d, Rider.d_for(0.9)])
 	var holder := Rider.new()
 	holder.place(3.0, 0.4)
 	for i in 180:
-		holder.step(1.0 / 60.0, RideInput.REST_STEER, RideInput.REST_HEIGHT, wave, tuning)
+		holder.step(1.0 / 60.0, RideInput.REST_STEER, 0.0, wave, tuning)
 	_check(holder.u > 0.4 + 0.01 and holder.u < 0.4 + 0.3, "with no input the wave carries him slowly up the face (0.40 to %.2f in 3 s)" % holder.u)
 	var diver := Rider.new()
 	diver.place(3.0, 0.7)
 	var v_start := 0.0
 	var v_dive := 0.0
 	for i in 90:
-		diver.step(1.0 / 60.0, 0.49, maxf(0.7 - 0.01 * i, 0.0), wave, tuning)  # scrolling down
+		diver.step(1.0 / 60.0, 0.49, -0.01, wave, tuning)  # scrolling down
 		if i == 0:
 			v_start = diver.v
 		v_dive = maxf(v_dive, diver.v)
@@ -361,14 +361,14 @@ func _test_riding() -> void:
 	var climber := Rider.new()
 	climber.place(3.0, 0.3)
 	for i in 60:
-		climber.step(1.0 / 60.0, 0.49, minf(0.3 + 0.01 * i, 1.0), wave, tuning)  # scrolling up
+		climber.step(1.0 / 60.0, 0.49, 0.01, wave, tuning)  # scrolling up
 	_check(climber.theta > holder.theta and climber.u > 0.3, "scrolling up points the nose up the face")
 	var wild := Rider.new()
 	wild.place(3.0, 0.5)
 	var inside := true
 	var peel := wave.peel_speed()
 	for i in 1800:
-		wild.step(1.0 / 60.0, 0.5 + 0.5 * sin(i * 0.037), 0.5 + 0.5 * sin(i * 0.071 + 1.0), wave, tuning)
+		wild.step(1.0 / 60.0, 0.5 + 0.5 * sin(i * 0.037), 0.03 * sin(i * 0.071 + 1.0), wave, tuning)
 		inside = inside and wild.u >= Rider.U_LOW and wild.u <= Rider.U_HIGH and wild.d >= Rider.D_NEAR and wild.d <= Rider.D_FAR
 		inside = inside and wild.v >= Rider.MIN_SPEED * peel - 0.001 and wild.v <= Rider.MAX_SPEED * peel + 0.001
 		inside = inside and wild.theta >= Rider.THETA_MIN and wild.theta <= Rider.THETA_MAX and is_finite(wild.omega)
@@ -378,7 +378,7 @@ func _test_riding() -> void:
 	steady.place(3.0, 0.5)
 	var steady_burst := 0.0
 	for i in 240:
-		steady.step(1.0 / 60.0, 0.49, 0.5, wave, tuning)
+		steady.step(1.0 / 60.0, 0.49, 0.0, wave, tuning)
 		steady_burst = maxf(steady_burst, steady.take_burst())
 	_check(steady_burst == 0.0, "holding still throws no spray")
 	var snapper := Rider.new()
@@ -386,14 +386,14 @@ func _test_riding() -> void:
 	var biggest := 0.0
 	for i in 420:
 		var high := (i / 30) % 2 == 0
-		snapper.step(1.0 / 60.0, 0.49, 1.0 if high else 0.0, wave, tuning)
+		snapper.step(1.0 / 60.0, 0.49, 0.05 if high else -0.05, wave, tuning)
 		biggest = maxf(biggest, snapper.take_burst())
 	_check(biggest > 0.15, "snapping up and down the face throws spray (%.2f)" % biggest)
 	var gentle := Rider.new()
 	gentle.place(3.0, 0.5)
 	var smallest := 0.0
 	for i in 600:
-		gentle.step(1.0 / 60.0, 0.49, 0.5 + 0.12 * sin(i / 60.0 * 1.5), wave, tuning)
+		gentle.step(1.0 / 60.0, 0.49, 0.0015 * cos(i / 60.0 * 1.5), wave, tuning)
 		smallest = maxf(smallest, gentle.take_burst())
 	_check(smallest < biggest, "a gentle carve throws less than a hard snap")
 
@@ -569,5 +569,5 @@ func _test_surfer_3d() -> void:
 	_check(surfer.weight("bottom_turn") < 0.01, "a pose can be released again")
 	var model := WaveModel.new()
 	surfer.stand_on(model, 3.0, 0.5)
-	_check(surfer.position.is_equal_approx(model.surface_point(3.0, 0.5)), "the surfer stands on the wave surface")
+	_check(absf(surfer.position.distance_to(model.surface_point(3.0, 0.5)) - Surfer3D.PIVOT_TO_CENTRE) < 0.001, "the board turns about the back foot, which stays on the wave surface")
 	surfer.free()

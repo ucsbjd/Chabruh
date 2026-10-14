@@ -48,7 +48,7 @@ func _initialize() -> void:
 		for strength: float in bursts.get(i, []):
 			world.burst(strength)
 		if ride_from >= 0.0 and ride_from != ride_to:
-			world._ride_input.height = lerpf(ride_from, ride_to, clampf(float(i) / ride_frames, 0.0, 1.0))
+			world._ride_input.nudge_height(lerpf(ride_from, ride_to, clampf(float(i + 1) / ride_frames, 0.0, 1.0)) - lerpf(ride_from, ride_to, clampf(float(i) / ride_frames, 0.0, 1.0)))
 		await process_frame
 		if i in snaps:
 			root.get_texture().get_image().save_png(String(options.out).trim_suffix(".png") + "-%d.png" % i)

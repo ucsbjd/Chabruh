@@ -15,9 +15,12 @@ const TOUCH_FACE_FRACTION := 0.45
 
 var steer := REST_STEER
 var height := REST_HEIGHT
+## Everything pushed up (+) or down (-) the face since the Rider last asked, even when `height` was already at an end.
+var height_push := 0.0
 var tuning: TuningData = preload("res://data/tuning.tres")
 
 var _touches := {}
+var _prev_height := REST_HEIGHT
 var _busy := Vector2.ZERO            # how much recent scrolling there was in (steering, height), fading
 var _busy_at := 0.0
 
@@ -25,6 +28,8 @@ var _busy_at := 0.0
 func reset() -> void:
 	steer = REST_STEER
 	height = REST_HEIGHT
+	_prev_height = REST_HEIGHT
+	height_push = 0.0
 
 
 ## Feed every input event through here. `view` is the size of the screen, in pixels. `now` is the event's time
@@ -110,6 +115,21 @@ func _shape(value: float) -> float:
 	return clampf(REST_STEER + 0.5 * signf(c) * magnitude, 0.0, 1.0)
 
 
+## Moves the height by `amount` as if it had been scrolled (used by the capture tool).
+func nudge_height(amount: float) -> void:
+	height += amount
+	_clamp()
+
+
+## The push up or down the face since the last call, and clears it.
+func take_height_push() -> float:
+	var push := height_push
+	height_push = 0.0
+	return push
+
+
 func _clamp() -> void:
+	height_push += height - _prev_height
 	steer = clampf(steer, 0.0, 1.0)
 	height = clampf(height, 0.0, 1.0)
+	_prev_height = height

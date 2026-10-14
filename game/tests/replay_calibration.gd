@@ -73,7 +73,7 @@ func _replay(trial: Dictionary, wave: WaveModel, tuning: TuningData) -> Dictiona
 		while next < events.size() and float(events[next][0]) <= time:
 			_feed(input, events[next])
 			next += 1
-		rider.step(STEP, input.steer, input.height, wave, tuning)
+		rider.step(STEP, input.steer, input.take_height_push(), wave, tuning)
 		var strength := rider.take_burst()
 		if strength > 0.0:
 			summary.bursts += 1

@@ -46,7 +46,6 @@ var move := "trim"
 
 var _fresh := true
 var _stick := 0.0                    # radians of heading the player is asking for; fades when the input stops
-var _last_height := -1.0
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
@@ -79,10 +78,10 @@ func place(meters_ahead: float, face_height: float) -> void:
 	compression_vel = 0.0
 	_fresh = true
 	_stick = 0.0
-	_last_height = -1.0
 
 
-func step(delta: float, steer: float, height: float, model: WaveModel, tuning: TuningData) -> void:
+## `height_push` is how far the player pushed up (+) or down (-) the face this frame, in face heights (scroll, keys, drag).
+func step(delta: float, steer: float, height_push: float, model: WaveModel, tuning: TuningData) -> void:
 	if delta <= 0.0:
 		return
 	_clock += delta
@@ -104,9 +103,7 @@ func step(delta: float, steer: float, height: float, model: WaveModel, tuning: T
 	# Interim input: the change in the height setting (wheel, trackpad scroll, arrow keys) pushes a virtual stick that
 	# fades back to centre, so scrolling down points the nose down and letting go lets the wave take him again.
 	# Where along the wave to aim (the steering) stays a point on the wave, followed by driving faster or slower.
-	if _last_height >= 0.0:
-		_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + (height - _last_height) * tuning.stick_gain, -1.2, 1.2)
-	_last_height = height
+	_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + height_push * tuning.stick_gain, -1.2, 1.2)
 	var want_d := d_for(steer)
 	var target_theta := clampf(theta_trim + _stick, THETA_MIN, THETA_MAX)
 	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them.

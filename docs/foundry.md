@@ -37,7 +37,7 @@ Step 7 proved the pipeline with a placeholder figure; step 8 replaced it with th
 - Regions (the mask codes): 0 skin, 1 shorts (coral), 2 board (cream), 3 hair (sun-bleached spikes and mullet,
   mustache), 4 tattoo ink, 5 trim (aqua waistband, side stripe, palm print), 6 and 7 board stripes (pink, yellow; the
   coral and aqua bands reuse regions 1 and 5). The shorts are a shell copied from the body between waist and
-  mid-thigh; the tattoo is an image decal mapped on the back in body space, so it bends with the body.
+  mid-thigh; (the back tattoo was dropped in the second round: it kept appearing and vanishing as the torso turned).
 - Not done: pocket flap, drawstring, face detail (the camera sees the back), finger poses. Twelve more moves come in step 9.
 
 ## Reference footage and rig checks (step 8, second round)
@@ -63,6 +63,19 @@ the surfer, upscales to 512, writes `SHEET_<move>.jpg`), `pose_landmarks.py` (Me
 `.	oolsoundryoundry.ps1 -Frames 8 -Name bottom_turn` renders the move, and a yaw-0 render next to the crops
 makes `COMPARE_<move>.png`. Done so far: bottom turn (0 to 1.2 s of the clip; the torso fold is floored at about 35
 degrees in the later frames because MediaPipe under-reads it there). Not yet: the other seven moves, finger curl, the pocket flap.
+
+## Posing by hand in Blender
+
+1. Make the scene file once: `blender -b --python tools/foundry/render_character.py -- tools/foundry/work/rig tools/foundry/work/decals 1 18 surfer tools/foundry/work/character.blend`
+   (about 4 MB, gitignored). Open it in Blender (File > Open).
+2. Objects: `Human.rig` (the skeleton), `board`, and empties `foot_L/R` (IK targets, children of the board),
+   `knee_L/R` (poles, children of the board), `hand_L/R` and `elbow_L/R` (world space). Legs and arms are IK: move the
+   foot and hand targets, not the limb bones. In Pose mode rotate `root` (hips), `spine05` to `spine01`, `neck01` to
+   `neck03` and `head`; move or rotate the `board` in Object mode. The board's origin is the sprite anchor.
+3. Save the pose: Scripting tab, open `tools/foundry/save_pose.py`, set `SET` (the move, such as `bottom_turn`), `POSE_NAME`
+   and `POSITION`, Run Script. It writes into `tools/foundry/poses/<SET>.json` (reusing a name replaces that frame).
+   A pose saved this way carries a `raw` block and is rendered exactly as posed.
+4. Render: `.	oolsoundryoundry.ps1 -Frames <count> -Name <SET>`.
 
 ## Frame format ("toon")
 

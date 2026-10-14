@@ -39,6 +39,12 @@ wl = lambda im: min((P(im, 15), P(im, 16)), key=lambda p: p[0])
 wr = lambda im: max((P(im, 15), P(im, 16)), key=lambda p: p[0])
 sx = lambda f, a: series(lambda im: (f(im)[a] - sh(im)[a]) * mpp * (1 if a == 0 else -1))
 hlx, hlz, hrx, hrz = sx(wl, 0), sx(wl, 1), sx(wr, 0), sx(wr, 1)
+# MediaPipe under-reads the fold when his legs and back are hidden by the board and spray, so the fold over the
+# picked frames is keyed by eye against the sheet: deep, hinged at the hips toward the wave, opening toward the end.
+BEND = [28, 28, 28, 28, 28, 28, 26, 24]
+HINGE = [58, 58, 58, 56, 52, 48, 44, 40]
+HL = [(-0.14, 0.22, -0.50), (-0.14, 0.22, -0.50), (-0.15, 0.22, -0.50), (-0.16, 0.22, -0.48), (-0.18, 0.22, -0.46), (-0.20, 0.22, -0.44), (-0.24, 0.20, -0.40), (-0.28, 0.20, -0.36)]
+HR = [(0.10, 0.15, -0.48), (0.12, 0.15, -0.48), (0.15, 0.15, -0.46), (0.22, 0.12, -0.44), (0.34, 0.10, -0.38), (0.46, 0.08, -0.28), (0.54, 0.05, -0.18), (0.60, 0.04, -0.10)]
 poses = []
 n = len(picks)
 for j, i in enumerate(picks):
@@ -46,10 +52,9 @@ for j, i in enumerate(picks):
     u = j / max(n - 1, 1)
     poses.append(dict(
         name=f"{name}_{j:02d}", roll=-8 - 10 * u, pitch=2 + 4 * u, lift=0,
-        down=float(0.12 + 0.26 * min(bend[k], 70) / 70),  # the hips fold down as the torso folds forward (the ankles are lost in spray)
-        yaw=22, bend=float(np.clip(max(bend[k], 44 - 12 * u), 0, 68)), lean=6 + 6 * u, twist=-14, look=42,
-        hl=(float(np.clip(hlx[k], -0.6, 0.2)), 0.30, float(np.clip(hlz[k], -0.55, 0.3))),
-        hr=(float(np.clip(hrx[k], -0.2, 0.62)), 0.05, float(np.clip(hrz[k], -0.55, 0.3))),
+        down=float(0.12 + 0.26 * min(BEND[j] + HINGE[j], 75) / 75),  # the hips fold down as the torso folds forward (the ankles are lost in spray)
+        yaw=22, bend=BEND[j], hinge=HINGE[j], lean=6 + 6 * u, twist=-14, look=42,
+        hl=HL[j], hr=HR[j], neck_back=46,
         knee_r_in=0.22 * (1 - u) + 0.1,
     ))
 json.dump(poses, open(out, "w"), indent=1)

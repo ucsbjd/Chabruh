@@ -45,6 +45,5 @@ def palm(path):
     im.save(path)
 
 
-tattoo(f"{sys.argv[1]}/tattoo.png")
 palm(f"{sys.argv[1]}/palm.png")
 print("decals written")

@@ -63,6 +63,7 @@ POSES = [
          hl=(-0.50, 0.12, 0.36), hr=(0.50, 0.12, 0.42)),
 ]
 SET_NAME = argv[4] if len(argv) > 4 else "surfer"
+BLEND_PATH = os.path.abspath(argv[5]) if len(argv) > 5 else None  # save the rigged scene here for posing by hand, then stop
 if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")):  # solved from reference footage
     POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")))
 POSES = POSES[:POSE_LIMIT]
@@ -423,8 +424,7 @@ def main():
     rig.rotation_euler.z = math.pi  # MPFB faces -Y; the surfer must face +Y, away from the camera
     update()
     mats = {
-        "skin": region_material("skin", 0, decal=f"{DECALS}/tattoo.png", decal_region=4,
-                                decal_box=(0.0, rig.data.bones["spine03"].head_local.z + 0.03, 0.56, 0.60)),
+        "skin": region_material("skin", 0),
         "shorts": region_material("shorts", 1), "board": region_material("board", 2), "hair": region_material("hair", 3),
         "trim": region_material("trim", 5), "stripe_a": region_material("stripe_a", 6), "stripe_b": region_material("stripe_b", 7),
     }
@@ -462,28 +462,43 @@ def main():
     first = True
     for n, pose in enumerate(POSES):
         reset_pose(rig)
-        board.rotation_euler = (math.radians(pose["roll"]), math.radians(pose["pitch"]), 0)
-        board.location = (0, 0, pose["lift"])
+        raw = pose.get("raw")  # a pose saved from Blender by save_pose.py: apply it as it is
+        if raw:
+            board.location, board.rotation_euler = raw["board"]["location"], raw["board"]["rotation"]
+            for ename, loc in raw["empties"].items():
+                bpy.data.objects[ename].location = loc
+            for bname, v in raw["bones"].items():
+                pb = rig.pose.bones[bname]
+                pb.rotation_mode = "QUATERNION"
+                pb.location, pb.rotation_quaternion = v[:3], v[3:7]
+            update()
+        board.rotation_euler = board.rotation_euler if raw else (math.radians(pose["roll"]), math.radians(pose["pitch"]), 0)
+        board.location = board.location if raw else (0, 0, pose["lift"])
         update()
         hips = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
-        rotate_bone(rig, "root", rot("Z", pose["yaw"]), pivot=hips)
-        M = world(rig, "root")
-        set_world(rig, "root", Matrix.Translation((0, 0, -pose["down"] + pose["lift"])) @ M)
-        update()
+        if not raw:
+            rotate_bone(rig, "root", rot("Z", pose["yaw"]), pivot=hips)
+            M = world(rig, "root")
+            set_world(rig, "root", Matrix.Translation((0, 0, -pose["down"] + pose["lift"])) @ M)
+            update()
+            # Hinge over at the hips (the pelvis tips toward the wave, the feet stay pinned), as a deep bottom turn does.
+            hips = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
+            rotate_bone(rig, "root", rot("X", -pose.get("hinge", 0.0)), pivot=hips)
         parts = ["spine05", "spine04", "spine03", "spine02", "spine01"]
         # Forward flexion is weighted toward the lower back, so the upper back (and the tattoo) stays turned to the camera.
-        for name, wb in zip(parts, SPINE_BEND_WEIGHTS):
-            R = rot("X", -pose["bend"] * wb) @ rot("Y", -pose["lean"] / 5) @ rot("Z", pose["twist"] / 5)
-            rotate_bone(rig, name, R)
-        # The back knee tucks in toward the front leg by knee_r_in (0 to 1).
-        poles["footR"].location.x = FOOT_X["R"] - 0.10 - 1.5 * pose.get("knee_r_in", 0.0)
-        for name, share in (("neck01", 0.2), ("neck02", 0.2), ("neck03", 0.2), ("head", 0.4)):
-            rotate_bone(rig, name, rot("Z", pose["look"] * share - pose["twist"] * share))
-        for s, key in (("L", "hl"), ("R", "hr")):
-            shoulder = world(rig, f"upperarm01.{s}").translation
-            targets["hand" + s].location = shoulder + Vector(pose[key])
-            sign = -1 if s == "L" else 1
-            poles["hand" + s].location = shoulder + Vector((sign * 0.25, -0.55, -0.15))
+        if not raw:
+            for name, wb in zip(parts, SPINE_BEND_WEIGHTS):
+                R = rot("X", -pose["bend"] * wb) @ rot("Y", -pose["lean"] / 5) @ rot("Z", pose["twist"] / 5)
+                rotate_bone(rig, name, R)
+            # The back knee tucks in toward the front leg by knee_r_in (0 to 1).
+            poles["footR"].location.x = FOOT_X["R"] - 0.10 - 1.5 * pose.get("knee_r_in", 0.0)
+            for name, share in (("neck01", 0.2), ("neck02", 0.2), ("neck03", 0.2), ("head", 0.4)):
+                rotate_bone(rig, name, rot("X", pose.get("neck_back", 0.0) * share) @ rot("Z", pose["look"] * share - pose["twist"] * share))
+            for s, key in (("L", "hl"), ("R", "hr")):
+                shoulder = world(rig, f"upperarm01.{s}").translation
+                targets["hand" + s].location = shoulder + Vector(pose[key])
+                sign = -1 if s == "L" else 1
+                poles["hand" + s].location = shoulder + Vector((sign * 0.25, -0.55, -0.15))
         update()
         if first:  # find the pole angle that bends each knee and elbow toward its pole target
             for s in "LR":
@@ -495,8 +510,12 @@ def main():
                     print("foundry: pole angle", key, s, best)
             update()
             first = False
+            if BLEND_PATH:
+                bpy.ops.wm.save_as_mainfile(filepath=BLEND_PATH)
+                print("foundry: saved", BLEND_PATH)
+                return
         # Lay each sole flat on the deck: bone Y toward the toes, the up axis along the board's normal.
-        for s in "LR":
+        for s in ("LR" if not (raw and "foot.L" in raw["bones"]) else ""):
             name = f"foot.{s}"
             fwd = board.matrix_world.to_3x3() @ Matrix.Rotation(math.radians(24), 3, "Z") @ Vector((0, 1, -0.12))
             nrm = board.matrix_world.to_3x3() @ Vector((0, 0, 1))

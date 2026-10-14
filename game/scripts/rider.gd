@@ -4,21 +4,28 @@ extends RefCounted
 ## Where they are on the wave: `d`, meters ahead of the peel point, and `u`, height up the face (0 trough, 1 crest).
 ## How they move: a heading `theta` in the face plane (0 down the line toward +d, negative nose down toward the
 ## trough, positive nose up toward the lip), the turn rate `omega`, a speed `v` in m/s and a hip `compression`.
-## Dropping down the face trades height for speed and carving back up trades it back, so moves come out of the
-## state instead of being played as clips. The nose leads: a target heading is followed by a stiff spring, the hips
-## by a softer one, and `lead` says how far the head and chest should already be turned into the next move.
-## For now the old input (a point on the wave to aim at) is turned into a target heading and a drive; the finger
-## controls replace that in step 11. Spray and the wake come from speed times sharpness, as before.
+##
+## Energy comes from the slope under the board. The face is steepest, and the wave carries the most energy, near the
+## peak where it is first breaking (small d, on the right of the screen); down the shoulder it flattens, and the trough
+## is flat. So dropping into the steep part builds speed, carrying it to the flat trough only coasts and then bleeds it
+## away, and pointing across the line (instead of along the way the wave is breaking) costs speed to skidding and lets the
+## curl gain on him. How fast he can change direction is limited by grip (sideways acceleration), so the faster he goes
+## the wider he turns. Pumping, small strokes up and down the face, adds speed smoothly in proportion to the rhythm.
+##
+## The nose leads: the player's push sets a target heading, a stiff spring turns the board to it, the hips follow on a
+## softer one, and `lead` says how far the head and chest should already be turned into the next move. For now the old
+## input is turned into pushes and a point to aim at along the wave; the finger controls replace that in step 11.
+## Spray and the wake come from speed times sharpness.
 
 const D_NEAR := -2.0                 # closest to the curl (inside the barrel zone)
 const D_FAR := 12.0                  # far down the shoulder
 const STEER_CURVE := 1.3             # puts the pocket near the middle of the steering range
 const U_LOW := 0.06
 const U_HIGH := 0.96
-const THETA_MIN := -0.85                # easy mode: no diving so steeply that the curl catches him (cos(theta) keeps him up with it)
-const THETA_MAX := 1.3
-const SPRING_K := 324.0              # board heading: critically damped, about 50 ms (natural frequency 18 rad/s)
-const SPRING_D := 36.0
+const THETA_MIN := -1.45             # almost straight down the face
+const THETA_MAX := 1.5               # almost straight up it
+const SPRING_K := 144.0              # board heading: critically damped, about 80 ms (natural frequency 12 rad/s)
+const SPRING_D := 24.0
 const COMPRESSION_K := 100.0         # hips: slightly underdamped, about 120 ms (natural frequency 10 rad/s)
 const COMPRESSION_D := 17.0
 const LEAD_MAX := 0.8
@@ -26,6 +33,7 @@ const MIN_SPEED := 0.45              # speeds are factors of the wave's own peel
 const TRIM_SPEED := 1.05
 const MAX_SPEED := 2.1
 const OMEGA_FULL := 3.0              # turn rate that counts as a fully sharp carve, rad/s
+const STICK_SMOOTHING := 0.10        # seconds: how smoothly the heading request follows the player's pushes
 const MOVE_HOLD := 0.3               # seconds a move label stays once seen
 const BURST_POWER := 1.9             # spray strength per unit of speed times sharpness
 
@@ -46,8 +54,9 @@ var move := "trim"
 
 var _fresh := true
 var _stick := 0.0                    # radians of heading the player is asking for; fades when the input stops
-var _stick_sign := 0.0               # which way the last real push went, for pumping
-var _stick_peak := 0.0               # the biggest push of that stroke
+var _stick_smooth := 0.0             # the same, smoothed so a scroll notch is not a jerk
+var _stick_slow := 0.0               # a slow average of the stick: what is left over after removing it is the rhythm
+var _pump_amount := 0.0              # how much rhythmic up-and-down the player is doing, smoothed
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
@@ -80,8 +89,15 @@ func place(meters_ahead: float, face_height: float) -> void:
 	compression_vel = 0.0
 	_fresh = true
 	_stick = 0.0
-	_stick_sign = 0.0
-	_stick_peak = 0.0
+	_stick_smooth = 0.0
+	_stick_slow = 0.0
+	_pump_amount = 0.0
+
+
+## The slope of the face under the board, in radians: from the model's real surface, so it is steepest near the peak
+## and in the upper face and flattens down the shoulder and into the trough.
+static func slope_at(model: WaveModel, at_d: float, at_u: float) -> float:
+	return acos(clampf(model.surface_normal(at_d, at_u).y, 0.0, 1.0))
 
 
 ## `height_push` is how far the player pushed up (+) or down (-) the face this frame, in face heights (scroll, keys, drag).
@@ -94,57 +110,64 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	var v_trim := TRIM_SPEED * peel
 	var v_max := MAX_SPEED * peel
 	var face_h := maxf(1.2, model.crest_height_at(d))
-	var sin_phi := sin(model.face_angle(u))
-	# The wave's own pull up the face. With no input he is carried up it slowly (drift_climb, meters per second of
-	# rise); holding his line takes a small nose-down heading, and pushing up or down the face starts from there.
+	var phi := slope_at(model, d, u)
+	var sin_phi := sin(phi)
+	# The wave's own pull up the face, bigger where it is bigger. With no input he is carried up it slowly
+	# (drift_climb, meters per second of rise); holding his line takes a small nose-down heading.
 	var draw := tuning.v_draw_base * clampf(face_h / 2.5, 0.4, 1.3)
 	if _fresh:
-		_fresh = false
 		v = v_trim
-		theta = asin(clampf((tuning.drift_climb - draw) / maxf(v * sin_phi, 0.5), -0.6, 0.6))
-	var theta_trim := asin(clampf((tuning.drift_climb - draw) / maxf(v * sin_phi, 0.5), -0.6, 0.6))
+	var theta_trim := asin(clampf((tuning.drift_climb - draw) / maxf(v * maxf(sin_phi, 0.3), 0.5), -0.6, 0.6))
+	if _fresh:
+		_fresh = false
+		theta = theta_trim
 
-	# Interim input: the change in the height setting (wheel, trackpad scroll, arrow keys) pushes a virtual stick that
-	# fades back to centre, so scrolling down points the nose down and letting go lets the wave take him again.
-	# Where along the wave to aim (the steering) stays a point on the wave, followed by driving faster or slower.
-	_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + height_push * tuning.stick_gain, -1.2, 1.2)
+	# The player's pushes (scroll, keys, drag) move a virtual stick that fades back to centre, so scrolling down points
+	# the nose down and letting go lets the wave take him again. A smoothed copy steers, so there are no jerks.
+	_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + height_push * tuning.stick_gain, -1.45, 1.45)
+	_stick_smooth = lerpf(_stick_smooth, _stick, 1.0 - exp(-delta / STICK_SMOOTHING))
+	_stick_slow = lerpf(_stick_slow, _stick_smooth, 1.0 - exp(-delta / 0.6))
+	_pump_amount = lerpf(_pump_amount, absf(_stick_smooth - _stick_slow), 1.0 - exp(-delta / 0.35))
 	var want_d := d_for(steer)
-	var pump_kick := _pump(sin_phi, peel, tuning)
-	var target_theta := clampf(theta_trim + _stick, THETA_MIN, THETA_MAX)
-	# Easy mode: when the curl is gaining on him he cannot point up the face faster than it moves along the wave, so
-	# climbing and carving never let it catch him.
-	var behind := clampf((want_d - d - 0.2) / 1.0, 0.0, 1.0)
-	if behind > 0.0:
-		var keep_up := acos(clampf(0.95 * peel / maxf(v, 0.95 * peel), 0.0, 1.0))
-		target_theta = lerpf(target_theta, clampf(target_theta, -keep_up, keep_up), behind)
+	var target_theta := clampf(theta_trim + _stick_smooth, THETA_MIN, THETA_MAX)
+	# Near the curl there is no room to point across the line: the closer he is, the more the heading is held along
+	# the way the wave is breaking. Farther down the wave he can point almost straight down or up.
+	var room := smoothstep(0.3, 2.8, d)
+	var limit := lerpf(0.3, THETA_MAX, room)
+	target_theta = clampf(target_theta, -limit, limit)
 	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them.
 	if u < 0.15 and target_theta < 0.0:
 		target_theta = lerpf(0.0, target_theta, clampf(u / 0.15, 0.0, 1.0))
 	if u > 0.88 and target_theta > 0.0:
 		target_theta = lerpf(target_theta, 0.0, clampf((u - 0.88) / 0.12, 0.0, 1.0))
 
-	# Tier 1: the head and chest turn into the move at once. Tier 2: the board follows on a stiff spring.
+	# Tier 1: the head and chest turn into the move at once. Tier 2: the board follows on a stiff spring, but only as
+	# fast as grip allows: sideways acceleration (speed times turn rate) is limited, so fast means wide turns.
 	lead = clampf(target_theta - theta, -LEAD_MAX, LEAD_MAX)
-	var authority := clampf(remap(v, v_min, v_max, 0.55, 1.15), 0.55, 1.15)
-	omega = clampf(omega + (SPRING_K * (target_theta - theta) - SPRING_D * omega) * authority * delta, -tuning.max_omega, tuning.max_omega)
+	var omega_cap := minf(tuning.max_omega, tuning.grip / maxf(v, 4.0))
+	omega = clampf(omega + (SPRING_K * (target_theta - theta) - SPRING_D * omega) * delta, -omega_cap, omega_cap)
 	theta = clampf(theta + omega * delta, THETA_MIN, THETA_MAX)
-	# Tier 3: the hips sink into hard turns and the barrel, and rebound as the turn is left.
-	# How low he gets: more with speed, more with how hard the direction is changing, most in the tube.
-	var target_crouch := clampf(0.18 + 0.30 * speed + 0.30 * clampf(absf(omega) / 3.0, 0.0, 1.0) + model.barrel_amount_at(d, u) * 0.65, 0.1, 1.0)
+	# Tier 3: the hips sink with speed and with the load of a turn, most in the tube, and rebound as the turn is left.
+	var load := clampf(v * absf(omega) / 20.0, 0.0, 1.0)
+	var target_crouch := clampf(0.18 + 0.30 * speed + 0.30 * load + model.barrel_amount_at(d, u) * 0.65, 0.1, 1.0)
 	compression_vel += (COMPRESSION_K * (target_crouch - compression) - COMPRESSION_D * compression_vel) * delta
 	compression = clampf(compression + compression_vel * delta, 0.0, 1.0)
 
-	# Energy: the slope gives speed going down and takes it going up, and water and carving take some. Drag is chosen so
-	# that the trim heading settles at trim speed. Pumping (small strokes up and down the face) adds speed in _pump().
-	var phi_mid := model.face_angle(0.5)
-	var ref_trim := asin(clampf((draw - tuning.drift_climb) / (v_trim * sin(phi_mid)), 0.0, 0.6))
-	var k_water := tuning.g_eff * sin(phi_mid) * sin(ref_trim) / (v_trim * v_trim)
+	# Energy. The slope gives speed going down and takes it going up. Water drag is chosen so that the trim heading settles
+	# at trim speed in the middle of the wave; carving and skidding across the line take more. Pumping adds speed in
+	# proportion to the rhythm of the strokes, to how steep the face is here and to how much room there is left to speed up.
+	var mid_slope := slope_at(model, 2.0, 0.5)
+	var ref_trim := asin(clampf((draw - tuning.drift_climb) / (v_trim * sin(mid_slope)), 0.0, 0.6))
+	var k_water := tuning.g_eff * sin(mid_slope) * sin(ref_trim) / (v_trim * v_trim)
 	var a_slope := -tuning.g_eff * sin_phi * sin(theta)
-	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v
+	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v - tuning.k_skid * absf(sin(theta)) * v
+	var headroom := clampf(1.0 - speed, 0.0, 1.0)
+	var a_pump := tuning.k_pump * _pump_amount * sin_phi * headroom
 	# Drive toward the speed that holds (or closes on) the point being aimed at; the slope still shows through.
 	var want_v := peel / maxf(cos(theta), 0.35) + clampf(tuning.drive_reach * (want_d - d), -0.4 * peel, 0.8 * peel)
-	var a_drive := clampf(tuning.drive_gain * (want_v - v), -tuning.max_drive, tuning.max_drive)
-	v = clampf(v + (a_slope + a_drag + a_drive) * delta + pump_kick, v_min, v_max)
+	# (it brakes gently, so speed he has earned by diving or pumping is not taken straight back)
+	var a_drive := clampf(tuning.drive_gain * (want_v - v) * (1.0 if want_v > v else 0.3), -tuning.max_drive, tuning.max_drive)
+	v = clampf(v + (a_slope + a_drag + a_pump + a_drive) * delta, v_min, v_max)
 	speed = clampf(remap(v, v_min, v_max, 0.0, 1.0), 0.0, 1.0)
 
 	# Move along the wave: ahead of the peel point while faster than the curl, up the face by the heading's rise.
@@ -162,23 +185,6 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 
 	_update_spray(delta, tuning)
 	_update_move(model, peel)
-
-
-## Pumping: every time the stick reverses after a real stroke, the stroke's size is paid out as speed (a surfer or
-## skater pumps by working the board up and down the slope). The steeper the face and the faster the wave, the more it gives.
-func _pump(sin_phi: float, peel: float, tuning: TuningData) -> float:
-	var kick := 0.0
-	if absf(_stick) > 0.05:
-		var way := signf(_stick)
-		if way != _stick_sign:
-			if _stick_sign != 0.0 and absf(_stick_peak) > tuning.pump_min_stroke:
-				kick = tuning.k_pump * absf(_stick_peak) * sin_phi * peel
-				compression_vel -= 4.0 * absf(_stick_peak)  # the rebound out of the stroke
-			_stick_sign = way
-			_stick_peak = 0.0
-		if absf(_stick) > absf(_stick_peak):
-			_stick_peak = _stick
-	return kick
 
 
 ## The strength of a spray that should be thrown now, 0 to 1, or 0 for none. Asking clears it.

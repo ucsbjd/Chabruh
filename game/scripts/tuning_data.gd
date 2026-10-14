@@ -34,20 +34,22 @@ extends Resource
 @export var key_rate: float = 0.9
 
 @export_group("Carving")
-## Gravity along the face (m/s squared), how much carving bleeds speed, and how much speed one pumping stroke pays out
-## (a fraction of the wave's speed per radian of stroke, scaled by the steepness).
+## Gravity along the face (m/s squared), how much carving bleeds speed, and how fast a steady rhythm of pumping adds speed
+## (m/s squared per radian of rhythm, scaled by the steepness and how much room there is to speed up).
 @export var g_eff: float = 9.0
 @export var k_carve: float = 0.12
-@export var k_pump: float = 0.35
-## The smallest up-and-down stroke (radians of heading) that pumps.
-@export var pump_min_stroke: float = 0.12
+@export var k_pump: float = 45.0
+## Skidding across the line (pointing off the way the wave is breaking) costs speed in proportion to this.
+@export var k_skid: float = 0.12
+## The most sideways acceleration the board can hold (m/s squared): faster means wider turns.
+@export var grip: float = 22.0
 ## How fast the wave's own draw lifts a surfer up the face, m/s (scaled by the wave's height).
 @export var v_draw_base: float = 1.1
 ## The sharpest the board can turn, rad/s.
 @export var max_omega: float = 3.5
 ## Until the finger controls (step 11), scrolling is a virtual stick: radians of heading per unit of height scrolled, and how
 ## long the stick takes to fade back to centre once the scrolling stops.
-@export var stick_gain: float = 7.0
+@export var stick_gain: float = 4.5
 @export var stick_decay: float = 0.55
 ## With no input at all the wave carries him up the face at about this many meters per second of height.
 @export var drift_climb: float = 0.3

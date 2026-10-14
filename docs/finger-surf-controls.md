@@ -52,6 +52,16 @@ crest; wave height 1.4 to 4.4 m). Findings and what we do about them:
     behind the back foot (0.48 m from the board's middle). The right arm hung straight up because the baked arm pose was used as the
     rest; hands now rest hanging from the shoulders.
 
+11. **Second pass on feel (step 10).** (a) Headings now reach -1.45 to +1.5 rad (almost straight down or up the face) but near the curl the
+    allowed angle shrinks (`0.3` rad at `d < 0.3`, full beyond `d = 2.8`), so he cannot be caught: pointing across the line far from the
+    curl is allowed, near it he must run along the way the wave is breaking. (b) Gravity uses the real face slope under the board
+    (`acos(surface_normal.y)`), so the gain is largest near the peak (small d, upper face) and fades down the shoulder and in the flat
+    trough; skidding across the line costs `K_SKID*|sin(theta)|*v`, so staying off the line bleeds speed. (c) Turn rate is limited by grip:
+    `omega_cap = min(MAX_OMEGA, GRIP / v)` (sideways acceleration), so fast means wide. (d) The pushes feed a stick that is smoothed over 0.1 s
+    and steers a softer spring (12 rad/s), so a scroll notch is not a jerk. (e) Pumping is continuous, not impulses: the rhythm is the part of
+    the stick left after removing its slow average (0.6 s), smoothed over 0.35 s, and gives `K_PUMP * rhythm * sin(slope) * (1 - speed)`
+    m/s squared; braking toward the aimed point is gentle (30%) so earned speed is kept. Crouch load is `v*|omega|/20`.
+
 ### Controls (step 11)
 1. **One virtual stick, relative deltas only.** Finger motion integrates into two numbers: `stick_y` (carve up or drop,
    which sets `input_theta`) and `stick_x` (drive or stall). Both spring back to zero when the fingers lift (the coast), so

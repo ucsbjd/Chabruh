@@ -29,25 +29,19 @@ uniform float rim_pixels = 2.0;
 uniform float rim_strength = 0.85;
 
 void fragment() {
-	if (UV.x > 1.0 / 3.0) {
-		discard;
-	}
+	// Plain expressions, no arrays, loops or discard: the simplest code that mobile GPUs all compile.
 	// Stay inside panel 0 so filtering never reads the data panels as colour.
-	float margin = 0.5 * TEXTURE_PIXEL_SIZE.x;
-	vec2 uv = vec2(clamp(UV.x, margin, 1.0 / 3.0 - margin), UV.y);
+	highp float third = 1.0 / 3.0;
+	highp float margin = 0.5 * TEXTURE_PIXEL_SIZE.x;
+	highp vec2 uv = vec2(clamp(UV.x, margin, third - margin), UV.y);
 	vec4 p0 = texture(TEXTURE, uv);
-	vec4 p1 = texture(TEXTURE, uv + vec2(1.0 / 3.0, 0.0));
-	vec4 p2 = texture(TEXTURE, uv + vec2(2.0 / 3.0, 0.0));
+	vec4 p1 = texture(TEXTURE, uv + vec2(third, 0.0));
+	vec4 p2 = texture(TEXTURE, uv + vec2(2.0 * third, 0.0));
 
-	float weights[8] = float[8](p0.r, p0.g, p0.b, p1.r, p1.g, p1.b, p2.r, p2.g);
-	vec3 colours[8] = vec3[8](surfer_skin.rgb, surfer_shorts.rgb, surfer_board.rgb, surfer_hair.rgb,
-			surfer_ink.rgb, surfer_trim.rgb, surfer_stripe_a.rgb, surfer_stripe_b.rgb);
-	vec3 base = vec3(0.0);
-	float total = 0.0;
-	for (int i = 0; i < 8; i++) {
-		base += colours[i] * weights[i];
-		total += weights[i];
-	}
+	vec3 base = surfer_skin.rgb * p0.r + surfer_shorts.rgb * p0.g + surfer_board.rgb * p0.b
+			+ surfer_hair.rgb * p1.r + surfer_ink.rgb * p1.g + surfer_trim.rgb * p1.b
+			+ surfer_stripe_a.rgb * p2.r + surfer_stripe_b.rgb * p2.g;
+	float total = p0.r + p0.g + p0.b + p1.r + p1.g + p1.b + p2.r + p2.g;
 	base /= max(total, 0.0001);
 
 	float lit = smoothstep(lit_above - band_softness, lit_above + band_softness, p2.b);
@@ -61,5 +55,6 @@ void fragment() {
 	float toward_sun = texture(TEXTURE, uv + rim_pixels * TEXTURE_PIXEL_SIZE * vec2(-1.0, -1.0)).a;
 	float rim = clamp(p0.a - toward_sun, 0.0, 1.0);
 	colour = mix(colour, surfer_rim.rgb, rim * rim_strength);
-	COLOR = vec4(colour, p0.a);
+	// Everything right of the first panel is data, not picture.
+	COLOR = vec4(colour, p0.a * step(UV.x, third));
 }

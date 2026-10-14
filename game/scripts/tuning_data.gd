@@ -33,15 +33,23 @@ extends Resource
 ## Per second, for held keys.
 @export var key_rate: float = 0.9
 
-@export_group("Riding")
-## How quickly the surfer follows where you point, per second.
-@export var follow_rate: float = 6.0
-## The fastest the surfer can climb the face, in face heights per second, and slide along the wave, in meters per second.
-@export var max_height_speed: float = 2.4
-@export var max_steer_speed: float = 14.0
-## How much pumping up and down builds speed, and how fast that speed fades.
-@export var pump_gain: float = 0.9
-@export var energy_decay: float = 0.35
+@export_group("Carving")
+## Gravity along the face (m/s squared), how much carving bleeds speed, and how much pumping out of a crouch adds.
+@export var g_eff: float = 6.0
+@export var k_carve: float = 0.12
+@export var k_pump: float = 1.8
+## How fast the wave's own draw lifts a surfer up the face, m/s (scaled by the wave's height).
+@export var v_draw_base: float = 1.1
+## The sharpest the board can turn, rad/s.
+@export var max_omega: float = 3.5
+## Until the finger controls (step 11): radians of target heading per unit of face height still to climb or drop.
+@export var heading_gain: float = 2.0
+## Until step 11: how hard the surfer drives toward the point on the wave being aimed at.
+@export var drive_reach: float = 0.35
+@export var drive_gain: float = 1.2
+@export var max_drive: float = 6.0
+
+@export_group("Spray")
 ## How much speed times sharpness it takes to throw spray, and the pause between sprays in seconds.
 @export var spray_threshold: float = 0.16
 @export var spray_pause: float = 0.45

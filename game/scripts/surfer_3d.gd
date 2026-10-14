@@ -12,12 +12,15 @@ const BASE_POSE := "trim"
 const BLEND_TIME := 0.12
 ## How much the board tilts with the wave face (0 flat to the sea, 1 flush with the face).
 const FACE_ALIGN := 0.55
+## Bones that lead a turn, root to tip, and how much of the lead each takes.
+const LEAD_BONES := [["spine02", 0.15], ["spine01", 0.2], ["neck01", 0.15], ["neck02", 0.15], ["head", 0.3]]
 
 var material := ShaderMaterial.new()
 var skeleton: Skeleton3D
 var _poses := {}  # pose name -> {bone index -> [position, rotation]}
 var _targets := {}
 var _weights := {}
+var _lead := 0.0  # radians the head and chest are already turned into the coming move
 
 
 func _init() -> void:
@@ -69,11 +72,40 @@ func step(delta: float) -> void:
 
 ## Stands the surfer on the wave at (d, u), heading down the line, the board tilted part-way to the face.
 func stand_on(model: WaveModel, d: float, u: float) -> void:
+	_place(model, d, u, 0.0, 0.0)
+
+
+## Drives the surfer from the rider's physical state: where he is and which way his nose points, the board rolled
+## onto its rail by the turn, the baked poses blended by how he is moving, and the head and chest leading the turn.
+func follow(rider: Rider, model: WaveModel, delta: float) -> void:
+	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll)
+	var bottom := clampf(rider.omega / 2.2, 0.0, 1.0) * clampf(1.0 - rider.u, 0.2, 1.0)
+	var top := clampf(-rider.omega / 2.0, 0.0, 1.0) * clampf(rider.u, 0.3, 1.0)
+	var barrel := model.barrel_amount_at(rider.d, rider.u)
+	var crouch := clampf(rider.compression, 0.0, 1.0) * (1.0 - barrel * 0.5)
+	# The poses are layered on the trim pose; keep their total at one so no joint is pushed past a baked pose.
+	var total := bottom + top + crouch
+	var scale := 1.0 / maxf(total, 1.0)
+	set_target("bottom_turn", bottom * scale)
+	set_target("top_turn", top * scale)
+	set_target("crouch", crouch * scale)
+	_lead = rider.lead
+	step(delta)
+
+
+func _place(model: WaveModel, d: float, u: float, theta: float, roll: float) -> void:
 	var normal := model.surface_normal(d, u).normalized()
+	var t_crest := Vector3(-1.0, 0.0, 0.0)  # down the line
+	var t_face := normal.cross(t_crest).normalized()  # up the face, toward the lip
+	t_crest = t_face.cross(normal).normalized()
+	var forward := (t_crest * cos(theta) + t_face * sin(theta)).normalized()
 	var up := Vector3.UP.lerp(normal, FACE_ALIGN).normalized()
-	var along := Vector3(1.0, 0.0, 0.0)  # the model already points its nose at -X (down the line) and faces -Z (the wave)
-	along = (along - up * along.dot(up)).normalized()
-	transform = Transform3D(Basis(along, up, along.cross(up)), model.surface_point(d, u))
+	# The model's nose points down its -X and its chest toward -Z; its +X is the tail.
+	var along := (-forward - up * (-forward).dot(up)).normalized()
+	var basis := Basis(along, up, along.cross(up))
+	# Rolling about the board's own length puts the toe-side (wave-side) rail down for a positive roll.
+	basis = basis * Basis(Vector3.RIGHT, roll)
+	transform = Transform3D(basis, model.surface_point(d, u))
 
 
 func _apply() -> void:
@@ -89,6 +121,7 @@ func _apply() -> void:
 			bone_rotation = bone_rotation.slerp(_poses[pose_name][bone][1], w)
 		skeleton.set_bone_pose_position(bone, bone_position)
 		skeleton.set_bone_pose_rotation(bone, bone_rotation)
+	_apply_lead()
 
 
 func _read_pose(animation: Animation) -> Dictionary:
@@ -105,3 +138,19 @@ func _read_pose(animation: Animation) -> Dictionary:
 			Animation.TYPE_ROTATION_3D:
 				pose[bone][1] = animation.track_get_key_value(t, 0)
 	return pose
+
+
+## Turns the neck, head and upper back about the vertical, so the surfer looks and torques into a turn before the
+## board has come round. Bones are visited root to tip so each sees its parent's final pose.
+func _apply_lead() -> void:
+	if absf(_lead) < 0.001:
+		return
+	for entry in LEAD_BONES:
+		var bone := skeleton.find_bone(entry[0])
+		if bone < 0:
+			continue
+		var parent := skeleton.get_bone_parent(bone)
+		var parent_basis := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+		var world_twist := Basis(Vector3.UP, -_lead * entry[1])
+		var local_twist := parent_basis.inverse() * world_twist * parent_basis
+		skeleton.set_bone_pose_rotation(bone, local_twist.get_rotation_quaternion() * skeleton.get_bone_pose_rotation(bone))

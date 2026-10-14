@@ -6,7 +6,9 @@ Read `CLAUDE.md`, `docs/progress.html`, and inspect `tools/foundry/`, `game/scri
 
 ## IMPLEMENTATION DECISIONS (written after reviewing this spec and simulating it; these win where they differ)
 
-Status: Sections 3 (3D surfer, steps 9 and 12) is built as a spike; Sections 4 and 5 are built in step 10 (physics) and
+Status: step 9 built the 3D surfer spike; step 10 built the physics (`rider.gd`, dials in `data/tuning.tres` group Carving, with the
+interim input: height error becomes a target heading, distance error a drive, keys 1 to 3 and H for testing); step 11 is next.
+Original status line: Section 3 (3D surfer, steps 9 and 12) is built as a spike; Sections 4 and 5 are built in step 10 (physics) and
 step 11 (controls). The first draft of the equations was simulated against the real `WaveModel` numbers (celerity 5,
 peel angle 40 degrees, so the peel speed is 7.8 m/s; `face_angle(u)` runs from 15 degrees at the trough to 55 to 88 at the
 crest; wave height 1.4 to 4.4 m). Findings and what we do about them:

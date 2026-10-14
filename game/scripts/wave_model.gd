@@ -192,6 +192,13 @@ func zone_at(d: float) -> Zone:
 	return Zone.WHITEWATER
 
 
+## How much tube a surfer at (d, u) is in, 0 to 1: nothing outside the barrel zone, and only low on the face, under the lip.
+func barrel_amount_at(at_d: float, at_u: float) -> float:
+	if zone_at(at_d) != Zone.BARREL:
+		return 0.0
+	return barrel() * (1.0 - smoothstep(0.35, 0.7, at_u))
+
+
 ## The cross-section of the wave at d. See WaveSection for the layout.
 ##
 ## It is built from simple curves: a gentle back slope, then an outer arc over the crest that is

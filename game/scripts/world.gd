@@ -63,6 +63,7 @@ var _tuning: TuningData = preload("res://data/tuning.tres")
 var _calibration: Calibration
 var _key_help := Label.new()
 var _surfer3d: Surfer3D
+var _readout := Label.new()
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
@@ -87,8 +88,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	_add_key_help()
-	if UrlParams.has("surfer3d"):
-		_set_surfer_3d(true)
+	_set_surfer_3d(not UrlParams.has("sprite"))  # the real-time surfer is the default; ?sprite or the 3 key brings the sprite back
 	for child in get_children():
 		if child is RidgeLayer:
 			child.build(HORIZON)
@@ -118,6 +118,8 @@ func _process(delta: float) -> void:
 	_ride_input.process(delta)
 	_read_held_keys(delta)
 	rider.step(delta, _ride_input.steer, _ride_input.height, _stage.model, _tuning)
+	if _readout.visible:
+		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f" % [rider.move, rider.v, roundi(rad_to_deg(rider.theta)), rider.omega, rider.compression]
 	var strength := rider.take_burst()
 	if strength > 0.0:
 		burst(strength)
@@ -160,6 +162,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_set_surfer_3d(_surfer3d == null)
 		elif event.pressed and not event.echo and event.keycode == KEY_H:
 			_key_help.visible = not _key_help.visible
+			_readout.visible = _key_help.visible
 	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
 	elif event is InputEventMouseButton:
 		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
@@ -214,7 +217,7 @@ func _place_surfer_and_spray() -> void:
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
 	if _surfer3d:
-		_surfer3d.stand_on(model, rider.d, rider.u)
+		_surfer3d.follow(rider, model, get_process_delta_time())
 	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
 	var ahead_px := _stage.project(model.surface_point(rider.d + 0.6, rider.u))
 	var behind_px := _stage.project(model.surface_point(rider.d - 0.6, rider.u))
@@ -249,6 +252,13 @@ func _add_key_help() -> void:
 	_key_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	_key_help.position += Vector2(14.0, -170.0)
 	add_child(_key_help)
+	_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_readout.modulate = Color(1, 1, 1, 0.6)
+	_readout.add_theme_font_size_override("font_size", 15)
+	_readout.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_readout.add_theme_constant_override("outline_size", 5)
+	_readout.position = Vector2(14.0, 44.0)
+	add_child(_readout)
 
 
 ## Swaps the sprite surfer for the real-time one that lives inside the wave's 3D stage (or back).

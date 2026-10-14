@@ -71,7 +71,8 @@ if GLB_PATH:  # level board (its roll and pitch come from the game's physics); t
     _bt = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", "bottom_turn.json")))[2]
     POSES = [dict(POSES[0], name="trim", roll=0, pitch=0),
              dict(POSES[0], name="crouch", roll=0, pitch=0, down=0.30, bend=26, hinge=14),
-             dict(_bt, name="bottom_turn", roll=0, pitch=0)]
+             dict(_bt, name="bottom_turn", roll=0, pitch=0),
+             dict(POSES[2], name="top_turn", roll=0, pitch=0)]
 POSES = POSES[:POSE_LIMIT]
 
 

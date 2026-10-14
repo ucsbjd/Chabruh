@@ -25,9 +25,10 @@ func _initialize() -> void:
 		world._set_surfer_3d(true)
 		if options.s3d != "yes":
 			world._surfer3d.set_target(options.s3d, 1.0)
-	if options.height != "":
-		world.rider.place(world.rider.d, Rider.u_for(float(options.height)))
-		world._ride_input.height = float(options.height)
+	if options.height != "":  # "0.9" holds there; "0.9:0.05" starts at 0.9 and aims at 0.05
+		var heights: PackedStringArray = options.height.split(":")
+		world.rider.place(world.rider.d, Rider.u_for(float(heights[0])))
+		world._ride_input.height = float(heights[heights.size() - 1])
 	if options.gallery == "yes":
 		world.get_node("PoseGallery").open()
 	var frames := int(options.frames)

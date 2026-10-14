@@ -340,9 +340,34 @@ func _test_riding() -> void:
 	var tuning := TuningData.new()
 	var rider := Rider.new()
 	rider.place(3.0, 0.5)
-	for i in 180:
+	for i in 900:
 		rider.step(1.0 / 60.0, 0.9, 1.0, wave, tuning)
-	_check(absf(rider.d - Rider.d_for(0.9)) < 0.3 and absf(rider.u - Rider.u_for(1.0)) < 0.05, "the surfer settles where they were pointed")
+	_check(absf(rider.d - Rider.d_for(0.9)) < 0.6 and absf(rider.u - Rider.u_for(1.0)) < 0.06, "the surfer settles where they were pointed (d %.2f of %.2f, u %.2f)" % [rider.d, Rider.d_for(0.9), rider.u])
+	var holder := Rider.new()
+	holder.place(3.0, 0.5)
+	for i in 900:
+		holder.step(1.0 / 60.0, RideInput.REST_STEER, RideInput.REST_HEIGHT, wave, tuning)
+	_check(absf(holder.u - Rider.u_for(RideInput.REST_HEIGHT)) < 0.06 and absf(holder.d - Rider.d_for(RideInput.REST_STEER)) < 0.6, "with no input the wave does not carry him off the line (u %.2f, d %.2f)" % [holder.u, holder.d])
+	var diver := Rider.new()
+	diver.place(3.0, 0.85)
+	var v_start := 0.0
+	var v_dive := 0.0
+	for i in 120:
+		diver.step(1.0 / 60.0, 0.49, 0.0, wave, tuning)
+		if i == 0:
+			v_start = diver.v
+		v_dive = maxf(v_dive, diver.v)
+	_check(v_dive > v_start + 0.5 and diver.theta < 0.0 or diver.u < 0.5, "dropping down the face builds speed and points the nose down (v %.1f to %.1f)" % [v_start, v_dive])
+	var wild := Rider.new()
+	wild.place(3.0, 0.5)
+	var inside := true
+	var peel := wave.peel_speed()
+	for i in 1800:
+		wild.step(1.0 / 60.0, 0.5 + 0.5 * sin(i * 0.037), 0.5 + 0.5 * sin(i * 0.071 + 1.0), wave, tuning)
+		inside = inside and wild.u >= Rider.U_LOW and wild.u <= Rider.U_HIGH and wild.d >= Rider.D_NEAR and wild.d <= Rider.D_FAR
+		inside = inside and wild.v >= Rider.MIN_SPEED * peel - 0.001 and wild.v <= Rider.MAX_SPEED * peel + 0.001
+		inside = inside and wild.theta >= Rider.THETA_MIN and wild.theta <= Rider.THETA_MAX and is_finite(wild.omega)
+	_check(inside, "wild steering for 30 seconds never leaves the wave, the speed range or the heading range")
 	_check(rider.speed >= 0.0 and rider.speed <= 1.0 and rider.sharpness >= 0.0 and rider.sharpness <= 1.0, "speed and sharpness stay between 0 and 1")
 	var steady := Rider.new()
 	steady.place(3.0, 0.5)

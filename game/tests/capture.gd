@@ -10,7 +10,7 @@ extends SceneTree
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": ""}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0"}
 
 
 func _initialize() -> void:
@@ -47,7 +47,9 @@ func _initialize() -> void:
 			timed_from = Time.get_ticks_usec()
 		for strength: float in bursts.get(i, []):
 			world.burst(strength)
-		if ride_from >= 0.0 and ride_from != ride_to:
+		if int(options.cycle) > 0:  # scroll down and up over and over, this many frames each way
+			world._ride_input.nudge_height(-0.018 if (i / int(options.cycle)) % 2 == 0 else 0.018)
+		elif ride_from >= 0.0 and ride_from != ride_to:
 			world._ride_input.nudge_height(lerpf(ride_from, ride_to, clampf(float(i + 1) / ride_frames, 0.0, 1.0)) - lerpf(ride_from, ride_to, clampf(float(i) / ride_frames, 0.0, 1.0)))
 		await process_frame
 		if i in snaps:

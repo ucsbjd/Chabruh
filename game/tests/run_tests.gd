@@ -363,6 +363,35 @@ func _test_riding() -> void:
 	for i in 60:
 		climber.step(1.0 / 60.0, 0.49, 0.01, wave, tuning)  # scrolling up
 	_check(climber.theta > holder.theta and climber.u > 0.3, "scrolling up points the nose up the face")
+	var cruiser := Rider.new()
+	cruiser.place(3.0, 0.5)
+	var pumper := Rider.new()
+	pumper.place(3.0, 0.5)
+	var cruise_speed := 0.0
+	var pump_speed := 0.0
+	for i in 600:
+		cruiser.step(1.0 / 60.0, 0.49, 0.0, wave, tuning)
+		pumper.step(1.0 / 60.0, 0.49, 0.012 * cos(i / 60.0 * TAU * 1.2), wave, tuning)  # small up-and-down strokes
+		if i >= 300:
+			cruise_speed += cruiser.v / 300.0
+			pump_speed += pumper.v / 300.0
+	_check(pump_speed > cruise_speed + 0.5, "small up and down strokes pump: faster than cruising (%.1f vs %.1f m/s)" % [pump_speed, cruise_speed])
+	var drop := Rider.new()
+	drop.place(3.0, 0.8)
+	var deep := 0.0
+	for i in 60:
+		drop.step(1.0 / 60.0, 0.49, -0.012, wave, tuning)
+		deep = maxf(deep, drop.compression)
+	var easy := Rider.new()
+	easy.place(3.0, 0.8)
+	_check(deep > easy.compression + 0.2, "he crouches lower with speed and a hard change of direction (%.2f)" % deep)
+	var weaver := Rider.new()
+	weaver.place(3.0, 0.6)
+	var worst := 0.0
+	for i in 2400:
+		weaver.step(1.0 / 60.0, 0.49, -0.018 if (i / 50) % 2 == 0 else 0.018, wave, tuning)  # down, up, down, up...
+		worst = maxf(worst, Rider.d_for(0.49) - weaver.d)
+	_check(worst < 2.2, "going up and down the face over and over never lets the curl catch him (fell back %.1f m)" % worst)
 	var wild := Rider.new()
 	wild.place(3.0, 0.5)
 	var inside := true

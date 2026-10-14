@@ -44,6 +44,14 @@ crest; wave height 1.4 to 4.4 m). Findings and what we do about them:
    must be fed from the amount pushed (`RideInput.take_height_push()`), not from the clamped height, or scrolling does nothing at an end stop.
    (d) Hand targets are relative to the shoulders and turn with the chest, never fixed in the model.
 
+10. **Tuned by playing (step 10).** Speeds scale with the peel speed (`MAX_SPEED` 2.1x); `G_EFF` 9, drive 0.5, so dives are fast and carry
+    speed to the bottom, where it fades over a few seconds. **Pumping** is the reversal of the stick: each stroke reversed pays out
+    `K_PUMP * stroke * sin(face angle) * peel_speed` of speed (strokes under 0.12 rad do nothing). He crouches with speed and change of
+    direction: `0.18 + 0.30*speed + 0.30*|omega|/3 + barrel`. Easy mode: heading limits (`-0.85` to `1.3` rad), and when the curl is gaining
+    he cannot point further off the line than `acos(0.95*peel/v)`, so repeated up and down never lets it catch him. The pivot is just
+    behind the back foot (0.48 m from the board's middle). The right arm hung straight up because the baked arm pose was used as the
+    rest; hands now rest hanging from the shoulders.
+
 ### Controls (step 11)
 1. **One virtual stick, relative deltas only.** Finger motion integrates into two numbers: `stick_y` (carve up or drop,
    which sets `input_theta`) and `stick_x` (drive or stall). Both spring back to zero when the fingers lift (the coast), so

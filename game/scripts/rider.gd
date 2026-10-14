@@ -15,8 +15,8 @@ const D_FAR := 12.0                  # far down the shoulder
 const STEER_CURVE := 1.3             # puts the pocket near the middle of the steering range
 const U_LOW := 0.06
 const U_HIGH := 0.96
-const THETA_MIN := -1.45
-const THETA_MAX := 1.55
+const THETA_MIN := -0.85                # easy mode: no diving so steeply that the curl catches him (cos(theta) keeps him up with it)
+const THETA_MAX := 1.3
 const SPRING_K := 324.0              # board heading: critically damped, about 50 ms (natural frequency 18 rad/s)
 const SPRING_D := 36.0
 const COMPRESSION_K := 100.0         # hips: slightly underdamped, about 120 ms (natural frequency 10 rad/s)
@@ -24,7 +24,7 @@ const COMPRESSION_D := 17.0
 const LEAD_MAX := 0.8
 const MIN_SPEED := 0.45              # speeds are factors of the wave's own peel speed, so they follow the wave
 const TRIM_SPEED := 1.05
-const MAX_SPEED := 1.7
+const MAX_SPEED := 2.1
 const OMEGA_FULL := 3.0              # turn rate that counts as a fully sharp carve, rad/s
 const MOVE_HOLD := 0.3               # seconds a move label stays once seen
 const BURST_POWER := 1.9             # spray strength per unit of speed times sharpness
@@ -46,6 +46,8 @@ var move := "trim"
 
 var _fresh := true
 var _stick := 0.0                    # radians of heading the player is asking for; fades when the input stops
+var _stick_sign := 0.0               # which way the last real push went, for pumping
+var _stick_peak := 0.0               # the biggest push of that stroke
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
@@ -78,6 +80,8 @@ func place(meters_ahead: float, face_height: float) -> void:
 	compression_vel = 0.0
 	_fresh = true
 	_stick = 0.0
+	_stick_sign = 0.0
+	_stick_peak = 0.0
 
 
 ## `height_push` is how far the player pushed up (+) or down (-) the face this frame, in face heights (scroll, keys, drag).
@@ -105,7 +109,14 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	# Where along the wave to aim (the steering) stays a point on the wave, followed by driving faster or slower.
 	_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + height_push * tuning.stick_gain, -1.2, 1.2)
 	var want_d := d_for(steer)
+	var pump_kick := _pump(sin_phi, peel, tuning)
 	var target_theta := clampf(theta_trim + _stick, THETA_MIN, THETA_MAX)
+	# Easy mode: when the curl is gaining on him he cannot point up the face faster than it moves along the wave, so
+	# climbing and carving never let it catch him.
+	var behind := clampf((want_d - d - 0.2) / 1.0, 0.0, 1.0)
+	if behind > 0.0:
+		var keep_up := acos(clampf(0.95 * peel / maxf(v, 0.95 * peel), 0.0, 1.0))
+		target_theta = lerpf(target_theta, clampf(target_theta, -keep_up, keep_up), behind)
 	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them.
 	if u < 0.15 and target_theta < 0.0:
 		target_theta = lerpf(0.0, target_theta, clampf(u / 0.15, 0.0, 1.0))
@@ -118,23 +129,22 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	omega = clampf(omega + (SPRING_K * (target_theta - theta) - SPRING_D * omega) * authority * delta, -tuning.max_omega, tuning.max_omega)
 	theta = clampf(theta + omega * delta, THETA_MIN, THETA_MAX)
 	# Tier 3: the hips sink into hard turns and the barrel, and rebound as the turn is left.
-	var target_crouch := clampf(0.22 + absf(omega) * 0.25 + model.barrel_amount_at(d, u) * 0.65, 0.1, 1.0)
+	# How low he gets: more with speed, more with how hard the direction is changing, most in the tube.
+	var target_crouch := clampf(0.18 + 0.30 * speed + 0.30 * clampf(absf(omega) / 3.0, 0.0, 1.0) + model.barrel_amount_at(d, u) * 0.65, 0.1, 1.0)
 	compression_vel += (COMPRESSION_K * (target_crouch - compression) - COMPRESSION_D * compression_vel) * delta
 	compression = clampf(compression + compression_vel * delta, 0.0, 1.0)
 
-	# Energy: the slope gives speed going down and takes it going up, water and carving take some, and extending
-	# out of a crouch in the middle of a carve pumps. Drag is chosen so that the trim heading settles at trim speed.
+	# Energy: the slope gives speed going down and takes it going up, and water and carving take some. Drag is chosen so
+	# that the trim heading settles at trim speed. Pumping (small strokes up and down the face) adds speed in _pump().
 	var phi_mid := model.face_angle(0.5)
 	var ref_trim := asin(clampf((draw - tuning.drift_climb) / (v_trim * sin(phi_mid)), 0.0, 0.6))
 	var k_water := tuning.g_eff * sin(phi_mid) * sin(ref_trim) / (v_trim * v_trim)
 	var a_slope := -tuning.g_eff * sin_phi * sin(theta)
 	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v
-	var mid_face := clampf(1.0 - absf(u - 0.45) * 1.8, 0.0, 1.0)
-	var a_pump := tuning.k_pump * absf(omega) * maxf(0.0, -compression_vel) * mid_face * maxf(0.2, cos(theta))
 	# Drive toward the speed that holds (or closes on) the point being aimed at; the slope still shows through.
 	var want_v := peel / maxf(cos(theta), 0.35) + clampf(tuning.drive_reach * (want_d - d), -0.4 * peel, 0.8 * peel)
 	var a_drive := clampf(tuning.drive_gain * (want_v - v), -tuning.max_drive, tuning.max_drive)
-	v = clampf(v + (a_slope + a_drag + a_pump + a_drive) * delta, v_min, v_max)
+	v = clampf(v + (a_slope + a_drag + a_drive) * delta + pump_kick, v_min, v_max)
 	speed = clampf(remap(v, v_min, v_max, 0.0, 1.0), 0.0, 1.0)
 
 	# Move along the wave: ahead of the peel point while faster than the curl, up the face by the heading's rise.
@@ -152,6 +162,23 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 
 	_update_spray(delta, tuning)
 	_update_move(model, peel)
+
+
+## Pumping: every time the stick reverses after a real stroke, the stroke's size is paid out as speed (a surfer or
+## skater pumps by working the board up and down the slope). The steeper the face and the faster the wave, the more it gives.
+func _pump(sin_phi: float, peel: float, tuning: TuningData) -> float:
+	var kick := 0.0
+	if absf(_stick) > 0.05:
+		var way := signf(_stick)
+		if way != _stick_sign:
+			if _stick_sign != 0.0 and absf(_stick_peak) > tuning.pump_min_stroke:
+				kick = tuning.k_pump * absf(_stick_peak) * sin_phi * peel
+				compression_vel -= 4.0 * absf(_stick_peak)  # the rebound out of the stroke
+			_stick_sign = way
+			_stick_peak = 0.0
+		if absf(_stick) > absf(_stick_peak):
+			_stick_peak = _stick
+	return kick
 
 
 ## The strength of a spray that should be thrown now, 0 to 1, or 0 for none. Asking clears it.

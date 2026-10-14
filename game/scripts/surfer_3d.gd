@@ -24,8 +24,8 @@ const LEAD_BONES := [["spine02", 0.15], ["spine01", 0.2], ["neck01", 0.15], ["ne
 ## Hip pivot toward the nose when the nose points straight down the face, radians, and the weight shift over the front foot, meters.
 const DIVE_YAW := 1.0
 const DIVE_SHIFT := 0.12
-## From the back foot (the pivot of a turn) to the middle of the board, meters.
-const PIVOT_TO_CENTRE := 0.36
+## From just behind the back foot (the pivot of a turn) to the middle of the board, meters.
+const PIVOT_TO_CENTRE := 0.48
 const LEGS := [["upperleg02.L", "lowerleg01.L", "foot.L", -1.0], ["upperleg02.R", "lowerleg01.R", "foot.R", 1.0]]
 const ARMS := [["upperarm02.L", "lowerarm01.L", "wrist.L", -1.0], ["upperarm02.R", "lowerarm01.R", "wrist.R", 1.0]]
 
@@ -41,7 +41,7 @@ var _hand_offset := {-1.0: Vector3.ZERO, 1.0: Vector3.ZERO}
 var _clock := 0.0
 var _foot_target := {}  # side -> where the ankle stays, in the model's space (found from the trim pose)
 var _foot_basis := {}   # side -> how the foot sits flat on the deck, in skeleton space
-var _hand_rest := {}    # side -> where the hand rests relative to its shoulder in the trim pose, in the model's space
+var _hand_rest := {}    # side -> where the hand rests relative to its shoulder, in the model's space
 
 
 func _init() -> void:
@@ -65,8 +65,7 @@ func _init() -> void:
 		_foot_target[leg[3]] = to_model * skeleton.get_bone_global_pose(foot).origin
 		_foot_basis[leg[3]] = skeleton.get_bone_global_pose(foot).basis
 	for arm in ARMS:
-		var shoulder_rest := to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[0])).origin
-		_hand_rest[arm[3]] = to_model * skeleton.get_bone_global_pose(skeleton.find_bone(arm[2])).origin - shoulder_rest
+		_hand_rest[arm[3]] = Vector3(arm[3] * 0.22, -0.40, -0.12)  # hanging relaxed (the baked right arm points up, so it is not used)
 	_pose_body()
 
 
@@ -111,7 +110,7 @@ func stand_on(model: WaveModel, d: float, u: float) -> void:
 ## onto its rail by the turn, the baked poses blended by how he is moving, and the hips, arms and head following.
 func follow(rider: Rider, model: WaveModel, delta: float) -> void:
 	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll)
-	var bottom := clampf(rider.omega / 2.2, 0.0, 1.0) * clampf(1.0 - rider.u, 0.2, 1.0)
+	var bottom := maxf(clampf(rider.omega / 2.2, 0.0, 1.0), clampf((rider.compression - 0.55) / 0.4, 0.0, 1.0)) * clampf(1.0 - rider.u, 0.2, 1.0)
 	var top := clampf(-rider.omega / 2.0, 0.0, 1.0) * clampf(rider.u, 0.3, 1.0)
 	var barrel := model.barrel_amount_at(rider.d, rider.u)
 	_dive = clampf(-rider.theta / 0.9, 0.0, 1.0)

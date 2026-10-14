@@ -34,10 +34,13 @@ extends Resource
 @export var key_rate: float = 0.9
 
 @export_group("Carving")
-## Gravity along the face (m/s squared), how much carving bleeds speed, and how much pumping out of a crouch adds.
-@export var g_eff: float = 6.0
+## Gravity along the face (m/s squared), how much carving bleeds speed, and how much speed one pumping stroke pays out
+## (a fraction of the wave's speed per radian of stroke, scaled by the steepness).
+@export var g_eff: float = 9.0
 @export var k_carve: float = 0.12
-@export var k_pump: float = 1.8
+@export var k_pump: float = 0.35
+## The smallest up-and-down stroke (radians of heading) that pumps.
+@export var pump_min_stroke: float = 0.12
 ## How fast the wave's own draw lifts a surfer up the face, m/s (scaled by the wave's height).
 @export var v_draw_base: float = 1.1
 ## The sharpest the board can turn, rad/s.
@@ -49,8 +52,8 @@ extends Resource
 ## With no input at all the wave carries him up the face at about this many meters per second of height.
 @export var drift_climb: float = 0.3
 ## Until step 11: how hard the surfer drives toward the point on the wave being aimed at.
-@export var drive_reach: float = 0.35
-@export var drive_gain: float = 1.2
+@export var drive_reach: float = 0.7
+@export var drive_gain: float = 0.5
 @export var max_drive: float = 6.0
 
 @export_group("Spray")

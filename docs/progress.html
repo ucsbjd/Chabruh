@@ -337,7 +337,7 @@ const STEPS = [
     ]
   },
   {
-    n: 8, status: "todo",
+    n: 8, status: "done",
     title: "Surfer foundry 2: the toon surfer",
     goal: "The real surfer, from the look sheet in storyboardimages/character: lean tanned surfer, spiky sun-bleached hair, coral shorts with aqua waistband and palm print, shaka back tattoo, in the wave's flat style.",
     build: [
@@ -355,26 +355,43 @@ const STEPS = [
   },
   {
     n: 9, status: "todo",
-    title: "Surfer foundry 3: the moves and the pose grid, in the game",
-    goal: "The three moves and continuous control: bottom turn, top turn, cutback as short clips, and a grid of stances so the surfer leans and crouches continuously with the player's hands.",
+    title: "Surfer foundry 3: the real-time 3D surfer (spike)",
+    goal: "Replace the sprite surfer with a skinned 3D character living inside the wave's own 3D stage, drawn in the same flat toon look and tinted by the mood. A pass or fail spike: if it passes, every later step builds on it; if it fails, we go back to the sprite pose grid.",
     build: [
-      "Where the motion comes from, in order of trust (all free, all running on this laptop's CPU). (1) Snapshots: pick sharp stills of real surfers doing each move from the footage (a handful of key poses per move; reference only, never committed or shipped). MediaPipe reads the body landmarks, a script turns them into joint angles for the rig, and a render, overlay, adjust loop checks each pose against its still. Blender interpolates between the key poses with IK holding the feet to the board. (2) Clips: MediaPipe on every frame of a cut clip, smoothed, as a rough guide and for timing. BlendArMocap (free, Rigify only, unmaintained, Blender 4.5 unverified) is an optional shortcut to test, never relied on. (3) Optional spike, only after the three surf moves work: UniMate, see the note below.",
-      "UniMate (github.com/Friedrich-M/UniMate, tutorial video InfibEoiDEs) is NOT in the main workflow. It turns a text prompt and a rigged character into motion and can fill in between key poses, but it takes no video or photos as input, it needs conda and Python 3.10 (GPU needs are not stated and this laptop has no NVIDIA GPU), a custom rig needs preprocessing, its checkpoints are non-commercial (CC BY-NC 4.0), its own README calls it an early step where many motions fail, and its clips are about 60 frames with no board or stance awareness. If tried at all, do it as a time-boxed spike for generic motions such as paddle, pop-up and wipeout, and only if it runs here and the licence allows what we ship.",
-      "Key poses for each move, rendered as short clips (about 16 to 24 frames each at 12 fps) plus a trim loop.",
-      "A pose grid (stance low to high, lean left to right, about 9 stills) so the game can pick and cross-fade by the rider's height and turn, not just play clips.",
-      "Wire it to the Rider's move labels, with a 0.1 s cross-dissolve between clips. The surfer's body, board tilt and the spray tail point stay consistent.",
-      "Revisit the controls now that the animations exist: the two trackpad fingers are the surfer's two feet on the board, so think about what each foot does (front foot steers, back foot drives or pumps), re-run tools/calibrate.ps1 and tools/replay.ps1 with the new moves, and retune data/tuning.tres. Make the lean and tilt follow the move labels.",
-      "A quality pass on the frames (automatic checks plus contact sheets)."
+      "Why: sprites need a render for every move and camera angle, cannot be interrupted smoothly, and cannot sit behind the lip curtain. A 3D character blends poses continuously, shares the wave camera and lighting, can be passed by the lip and mist, and is a few MB instead of hundreds of PNGs. Targets are desktop web (previews) and native Android and iOS apps, not phone browsers, so the mobile Safari skinning risk does not apply.",
+      "tools/foundry/export_surfer_glb.py (reusing the MPFB character and the rig scripts) writes game/assets/models/surfer.glb: body and shorts cut to about 5k triangles with their skin weights, normals smoothed from a simple capsule proxy so the light bands are big and flat, the 8 regions written as vertex colours so one shader colours everything in one draw call, finger curl, the pocket flap and the palm print, a rainbow board. No tattoo (dropped). Feet baked by IK so they never slip. The board is level in every baked pose; its roll and pitch will come from the physics.",
+      "For the spike, 3 baked poses: trim, crouch, bottom_turn (the other poses come after it passes).",
+      "game/shaders/surfer3d.gdshader (spatial, unshaded): region colours from the same surfer_* mood uniforms, three flat light bands from the sun (violet shade, never grey), and a view-space rim.",
+      "game/scripts/surfer_3d.gd (Surfer3D) loads the glb inside WaveStage's viewport, reads the baked poses into a table, blends bone rotations by weight, and stands on wave.surface_point(d, u) aligned to surface_normal. Opt-in with ?surfer3d and a key; the 2D surfer stays the default until the spike passes.",
+      "Check that the lip and mist pass in front of him inside the tube, measure frame time on the desktop, and keep the added download small."
     ],
-    notNow: ["Wipeouts, paddling, airs, barrel poses (they come with their own steps)."],
+    notNow: ["The other poses, the physics, wipeouts and airs (steps 10 onward)."],
     verify: [
-      "Riding up and down the wave, the surfer's body follows continuously, and the bottom turn, top turn and cutback each play when I do them.",
-      "For each key pose, a side-by-side of the real surfer still and our rig in the same pose, so I can see the moves are matched to real athletic form.",
-      "No visible jumps between clips, the surfer stays on the face, and it is smooth on my phone."
+      "With ?surfer3d the 3D surfer stands on the wave in the three moods, flat-shaded and re-tinted, and looks like the same character.",
+      "A key blends smoothly between trim, crouch and bottom turn with no pops, even if pressed again mid-blend.",
+      "The lip curtain passes in front of him in the barrel; the console is clean; frame rate is fine on the desktop; the added download is a few MB."
     ]
   },
   {
     n: 10, status: "todo",
+    title: "Carving physics and continuous 3D poses",
+    goal: "Riding feels like carving a snowboard down a mountain: the nose leads, speed comes from the slope, and moves emerge from the surfer's physical state instead of playing as clips. Nothing is committed, so the player can interrupt any move at any moment.",
+    build: [
+      "The full spec is in docs/step-10-physics-spec.md: heading theta, turn rate, speed, compression; slope gravity, carve drag, pump boost and the wave's upward draw; lead-and-follow springs (head and shoulders instantly, the board in about 50 ms, the hips in about 120 ms); soft boundary torques at the trough and crest.",
+      "Surfer3D takes its position and heading from that state: orientation from the wave surface, rail roll from turn rate times speed, and the bones blended continuously from the baked pose library by weights (bottom turn, top turn, cutback, vertical snap, barrel, crouch). Moves are labels the state earns (trim, bottom turn, top turn, cutback, hit the lip, floater, barrel, air, wipeout), so a bottom turn can never happen at the lip.",
+      "Decide how the mouse, trackpad or touch sets the target heading (the key design call), then re-run the calibration and replay tools and retune data/tuning.tres by feel.",
+      "Spray strength comes from speed times how sharply he turns, as before.",
+      "Finish the rest of the pose library (top turn, cutback, vertical snap, barrel, floater, air, wipeout) using the footage in storyboardimages/jbay_refs and the hand-posing workflow in docs/foundry.md."
+    ],
+    notNow: ["The full wave cycle and sound (later steps)."],
+    verify: [
+      "Dropping down the face, the nose leads and speed builds; carving back up trades speed for height; the move names fit what I did.",
+      "I can reverse any turn mid-way and the response is immediate, with a believable sense of weight.",
+      "A bottom turn only happens low on the face, a top turn high, and spray follows the sharpness of the turn."
+    ]
+  },
+  {
+    n: 11, status: "todo",
     title: "Wave cycle: lineup, set, barrel",
     goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
     build: [
@@ -392,7 +409,7 @@ const STEPS = [
     ]
   },
   {
-    n: 11, status: "todo",
+    n: 12, status: "todo",
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
@@ -410,7 +427,7 @@ const STEPS = [
     ]
   },
   {
-    n: 12, status: "todo",
+    n: 13, status: "todo",
     title: "Mobile polish and ship v0.1",
     goal: "Something I can send to a friend's phone.",
     build: [

@@ -62,6 +62,7 @@ var _ride_input := RideInput.new()
 var _tuning: TuningData = preload("res://data/tuning.tres")
 var _calibration: Calibration
 var _key_help := Label.new()
+var _surfer3d: Surfer3D
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
@@ -86,6 +87,8 @@ func _init() -> void:
 
 func _ready() -> void:
 	_add_key_help()
+	if UrlParams.has("surfer3d"):
+		_set_surfer_3d(true)
 	for child in get_children():
 		if child is RidgeLayer:
 			child.build(HORIZON)
@@ -147,7 +150,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and not event.echo and event.keycode == KEY_B:
 			_throw_test_burst()
 		elif event.pressed and not event.echo and event.keycode == KEY_1:
-			_surfer.play_once("bottom_turn")
+			if _surfer3d:
+				_surfer3d.set_target("bottom_turn", 1.0 - _surfer3d.target("bottom_turn"))
+			else:
+				_surfer.play_once("bottom_turn")
+		elif event.pressed and not event.echo and event.keycode == KEY_2 and _surfer3d:
+			_surfer3d.set_target("crouch", 1.0 - _surfer3d.target("crouch"))
+		elif event.pressed and not event.echo and event.keycode == KEY_3:
+			_set_surfer_3d(_surfer3d == null)
 		elif event.pressed and not event.echo and event.keycode == KEY_H:
 			_key_help.visible = not _key_help.visible
 	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
@@ -203,6 +213,8 @@ func _place_surfer_and_spray() -> void:
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
+	if _surfer3d:
+		_surfer3d.stand_on(model, rider.d, rider.u)
 	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
 	var ahead_px := _stage.project(model.surface_point(rider.d + 0.6, rider.u))
 	var behind_px := _stage.project(model.surface_point(rider.d - 0.6, rider.u))
@@ -225,14 +237,9 @@ func _read_held_keys(delta: float) -> void:
 
 ## A faint key list in the lower left for testing. H hides it.
 func _add_key_help() -> void:
-	_key_help.text = "1   bottom turn
-P   next animation
-B   spray burst
-M   mood
-R   reset
-- =   wave size
-[ ]   hollow
-H   hide this"
+	_key_help.text = "\n".join([
+		"1   bottom turn (3D: toggle)", "2   crouch (3D only, toggle)", "3   3D surfer on / off",
+		"P   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow", "H   hide this"])
 	_key_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_key_help.modulate = Color(1, 1, 1, 0.6)
 	_key_help.add_theme_font_size_override("font_size", 15)
@@ -242,6 +249,19 @@ H   hide this"
 	_key_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	_key_help.position += Vector2(14.0, -170.0)
 	add_child(_key_help)
+
+
+## Swaps the sprite surfer for the real-time one that lives inside the wave's 3D stage (or back).
+func _set_surfer_3d(on: bool) -> void:
+	if on and _surfer3d == null:
+		_surfer3d = Surfer3D.new()
+		_stage.add_actor(_surfer3d)
+		_register(_surfer3d.material)
+		_apply_mood()
+	elif not on and _surfer3d != null:
+		_surfer3d.queue_free()
+		_surfer3d = null
+	_surfer.visible = not on
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:

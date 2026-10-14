@@ -64,6 +64,16 @@ the surfer, upscales to 512, writes `SHEET_<move>.jpg`), `pose_landmarks.py` (Me
 makes `COMPARE_<move>.png`. Done so far: bottom turn (0 to 1.2 s of the clip; the torso fold is floored at about 35
 degrees in the later frames because MediaPipe under-reads it there). Not yet: the other seven moves, finger curl, the pocket flap.
 
+## The real-time surfer (step 9)
+
+`blender -b --python tools/foundry/export_surfer_glb.py` writes `game/assets/models/surfer.glb` (about 0.8 MB, about 6.8k
+triangles): the MPFB body, shorts and hair as one skinned mesh (decimated, normals copied from a capsule stand-in so the
+light bands are big and flat), the board as a second mesh, the 8 regions as vertex colours (red = region / 10), and
+the poses `trim`, `crouch` and `bottom_turn` baked as one-frame actions with IK already applied and the board level.
+In the game `Surfer3D` (`scripts/surfer_3d.gd`) lives inside `WaveStage`'s viewport and `shaders/surfer3d.gdshader`
+colours it from the mood. Open it with `?surfer3d` or the 3 key; 1 and 2 toggle the bottom turn and the crouch, which
+ease in and out over about 0.12 s and can be reversed at any moment. Capture with `tools\capture.ps1 -Surfer3d bottom_turn`.
+
 ## Posing by hand in Blender
 
 1. Make the scene file once: `blender -b --python tools/foundry/render_character.py -- tools/foundry/work/rig tools/foundry/work/decals 1 18 surfer tools/foundry/work/character.blend`

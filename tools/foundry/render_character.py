@@ -63,9 +63,15 @@ POSES = [
          hl=(-0.50, 0.12, 0.36), hr=(0.50, 0.12, 0.42)),
 ]
 SET_NAME = argv[4] if len(argv) > 4 else "surfer"
-BLEND_PATH = os.path.abspath(argv[5]) if len(argv) > 5 else None  # save the rigged scene here for posing by hand, then stop
+BLEND_PATH = os.path.abspath(argv[5]) if len(argv) > 5 and argv[5] else None  # save the rigged scene here for posing by hand, then stop
 if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")):  # solved from reference footage
     POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")))
+GLB_PATH = os.path.abspath(argv[6]) if len(argv) > 6 and argv[6] else None  # export the real-time model instead of rendering
+if GLB_PATH:  # level board (its roll and pitch come from the game's physics); the body keeps its lean, hinge and arms
+    _bt = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", "bottom_turn.json")))[2]
+    POSES = [dict(POSES[0], name="trim", roll=0, pitch=0),
+             dict(POSES[0], name="crouch", roll=0, pitch=0, down=0.30, bend=26, hinge=14),
+             dict(_bt, name="bottom_turn", roll=0, pitch=0)]
 POSES = POSES[:POSE_LIMIT]
 
 
@@ -418,6 +424,132 @@ def setup_scene():
     return scene, cam
 
 
+# ---------------------------------------------------------------- real-time model export
+def bake_pose(rig, name):
+    """Stores the evaluated pose (IK included) as a one-frame action of plain bone transforms."""
+    mats = {pb.name: pb.matrix.copy() for pb in rig.pose.bones}
+    bases = {}
+    for pb in rig.pose.bones:
+        par = pb.parent
+        bases[pb.name] = pb.bone.convert_local_to_pose(
+            mats[pb.name], pb.bone.matrix_local,
+            parent_matrix=mats[par.name] if par else Matrix(), parent_matrix_local=par.bone.matrix_local if par else Matrix(), invert=True)
+    rig.animation_data_create()
+    action = bpy.data.actions.new(name)
+    action.use_fake_user = True
+    rig.animation_data.action = action
+    for pb in rig.pose.bones:
+        loc, quat, _ = bases[pb.name].decompose()
+        pb.rotation_mode = "QUATERNION"
+        pb.location, pb.rotation_quaternion = loc, quat
+        pb.keyframe_insert("location", frame=1, group=pb.name)
+        pb.keyframe_insert("rotation_quaternion", frame=1, group=pb.name)
+    rig.animation_data.action = None
+
+
+def decimate(obj, rig, ratio):
+    for m in list(obj.modifiers):
+        if m.type in ("ARMATURE", "CORRECTIVE_SMOOTH"):
+            obj.modifiers.remove(m)
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    mod = obj.modifiers.new("Decimate", "DECIMATE")
+    mod.ratio = ratio
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    arm = obj.modifiers.new("Armature", "ARMATURE")
+    arm.object = rig
+
+
+def capsule(bm, a, b, radius):
+    a, b = Vector(a), Vector(b)
+    d = b - a
+    if d.length < 1e-4:
+        return
+    rotm = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=10, radius1=radius, radius2=radius, depth=d.length, matrix=Matrix.Translation((a + b) / 2) @ rotm)
+    for p in (a, b):
+        bmesh.ops.create_uvsphere(bm, u_segments=10, v_segments=6, radius=radius, matrix=Matrix.Translation(p))
+
+
+def smooth_normals_from_proxy(obj, rig):
+    """Big flat light bands need smooth, simple normals: copy them from a capsule stand-in for the body."""
+    bn = rig.data.bones
+    bm = bmesh.new()
+    seg = [("spine05", "spine01", 0.16), ("neck01", "head", 0.06)]
+    for s in "LR":
+        seg += [(f"upperleg02.{s}", f"lowerleg01.{s}", 0.095), (f"lowerleg01.{s}", f"foot.{s}", 0.062),
+                (f"upperarm02.{s}", f"lowerarm01.{s}", 0.052), (f"lowerarm01.{s}", f"wrist.{s}", 0.044)]
+    for a, b, rad in seg:
+        capsule(bm, bn[a].head_local, bn[b].head_local, rad)
+    bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=0.12, matrix=Matrix.Translation(bn["head"].head_local + Vector((0, 0, 0.06))))
+    proxy = bpy.data.objects.new("proxy", bpy.data.meshes.new("proxy"))
+    bm.to_mesh(proxy.data)
+    bm.free()
+    bpy.context.collection.objects.link(proxy)
+    proxy.parent = rig
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    for m in list(obj.modifiers):
+        if m.type == "ARMATURE":
+            obj.modifiers.remove(m)
+    mod = obj.modifiers.new("Normals", "DATA_TRANSFER")
+    mod.object = proxy
+    mod.use_loop_data = True
+    mod.data_types_loops = {"CUSTOM_NORMAL"}
+    mod.loop_mapping = "POLYINTERP_NEAREST"
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    arm = obj.modifiers.new("Armature", "ARMATURE")
+    arm.object = rig
+    bpy.data.objects.remove(proxy, do_unlink=True)
+
+
+def set_regions(obj, region_of_face):
+    attr = obj.data.color_attributes.new("Region", "FLOAT_COLOR", "CORNER")
+    obj.data.color_attributes.active_color = attr
+    for poly in obj.data.polygons:
+        rid = region_of_face(poly)
+        for li in poly.loop_indices:
+            attr.data[li].color = (rid / 10.0, 0.0, 0.0, 1.0)
+
+
+def export_glb(rig, base, shorts, hair, board):
+    """One skinned mesh (body, shorts, hair), one board, the baked poses as actions: game/assets/models/surfer.glb."""
+    decimate(base, rig, 0.2)
+    decimate(shorts, rig, 0.3)
+    try:
+        smooth_normals_from_proxy(base, rig)
+    except Exception as e:  # the look still works with the body's own normals
+        print("foundry: proxy normals skipped:", e)
+    toon = bpy.data.materials.new("toon")
+    set_regions(base, lambda p: 0)
+    set_regions(shorts, lambda p: (1, 5)[min(p.material_index, 1)])
+    for o in hair:
+        set_regions(o, lambda p: 3)
+    set_regions(board, lambda p: (6, 1, 7, 5, 2)[min(p.material_index, 4)])
+    for o in (base, shorts, board, *hair):
+        o.data.materials.clear()
+        o.data.materials.append(toon)
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in (shorts, *hair):
+        o.select_set(True)
+    base.select_set(True)
+    bpy.context.view_layer.objects.active = base
+    bpy.ops.object.join()
+    base.name = "SurferBody"
+    board.name = "Board"
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in (rig, base, board):
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = rig
+    os.makedirs(os.path.dirname(GLB_PATH), exist_ok=True)
+    bpy.ops.export_scene.gltf(filepath=GLB_PATH, export_format="GLB", use_selection=True, export_animations=True,
+                              export_animation_mode="ACTIONS", export_vertex_color="ACTIVE", export_skins=True,
+                              export_yup=True, export_apply=False, export_cameras=False, export_lights=False)
+    print("foundry: exported", GLB_PATH, round(os.path.getsize(GLB_PATH) / 1e6, 2), "MB, triangles", sum(len(p.vertices) - 2 for p in base.data.polygons))
+
+
 def main():
     base, rig = build_human()
     bpy.context.view_layer.objects.active = rig
@@ -531,6 +663,9 @@ def main():
         update()
         err = max((world(rig, f"lowerleg02.{s}") @ Vector((0, rig.pose.bones[f'lowerleg02.{s}'].length, 0)) - targets["foot" + s].matrix_world.translation).length for s in "LR")
         print(f"foundry: pose {pose['name']} foot error {err:.3f} m")
+        if GLB_PATH:
+            bake_pose(rig, pose["name"])
+            continue
         # Raw passes.
         for g, group in enumerate(REGION_GROUPS):
             set_mask_pass(group)
@@ -544,6 +679,9 @@ def main():
         c = world_to_camera_view(scene, cam, Vector((0, 0, 0)))
         meta["frames"].append({"pivot": [c.x * FRAME_W, (1 - c.y) * FRAME_H]})
         print(f"foundry: frame {n + 1}/{len(POSES)}", flush=True)
+    if GLB_PATH:
+        export_glb(rig, base, shorts, hair, board)
+        return
     with open(f"{OUT}/meta.json", "w") as fh:
         json.dump(meta, fh)
 

@@ -109,6 +109,11 @@ func _exit_tree() -> void:
 
 
 ## The two shader materials, so the world can feed them the mood's colours.
+## Puts something else (the real-time surfer) in the same 3D stage, so it shares the camera and the depth with the wave.
+func add_actor(node: Node3D) -> void:
+	_viewport.add_child(node)
+
+
 func materials() -> Array[ShaderMaterial]:
 	return [_wave_material, _water_material, _mist_material]
 

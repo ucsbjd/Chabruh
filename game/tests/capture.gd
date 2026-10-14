@@ -10,7 +10,7 @@ extends SceneTree
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": ""}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": ""}
 
 
 func _initialize() -> void:
@@ -21,6 +21,10 @@ func _initialize() -> void:
 	root.get_node("Palette").select(options.mood, true)
 	world.set_wave(float(options.size), float(options.hollow), float(options.peel))
 	world.set_surfer_pose(options.pose)
+	if options.s3d != "":  # the real-time surfer, optionally already blended to a pose (trim, crouch, bottom_turn)
+		world._set_surfer_3d(true)
+		if options.s3d != "yes":
+			world._surfer3d.set_target(options.s3d, 1.0)
 	if options.height != "":
 		world.rider.place(world.rider.d, Rider.u_for(float(options.height)))
 		world._ride_input.height = float(options.height)

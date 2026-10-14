@@ -28,6 +28,7 @@ func _initialize() -> void:
 	await _test_calibration()
 	_test_surfer_sprites()
 	_test_surfer()
+	_test_surfer_3d()
 	_test_tuning()
 	await _test_world()
 	print("%s: %d failed" % ["FAIL" if _failures > 0 else "PASS", _failures])
@@ -516,3 +517,27 @@ func _check(condition: bool, name: String) -> void:
 	if not condition:
 		_failures += 1
 	print("%s  %s" % ["ok  " if condition else "FAIL", name])
+
+
+func _test_surfer_3d() -> void:
+	var surfer := Surfer3D.new()
+	var names := surfer.pose_names()
+	_check("trim" in names and "crouch" in names and "bottom_turn" in names, "the real-time surfer carries its baked poses")
+	_check(surfer.skeleton.get_bone_count() > 100, "the real-time surfer is skinned to the full rig")
+	var foot := surfer.skeleton.find_bone("foot.L")
+	_check(foot >= 0, "the skeleton keeps the rig's bone names")
+	var before := surfer.skeleton.get_bone_pose_rotation(surfer.skeleton.find_bone("root"))
+	surfer.set_target("bottom_turn", 1.0)
+	for i in 30:
+		surfer.step(1.0 / 60.0)
+	var after := surfer.skeleton.get_bone_pose_rotation(surfer.skeleton.find_bone("root"))
+	_check(before.angle_to(after) > 0.3, "a pose target hinges the hips, smoothly")
+	_check(surfer.weight("bottom_turn") > 0.5 and surfer.weight("bottom_turn") < 1.0, "the pose weight eases in rather than snapping")
+	surfer.set_target("bottom_turn", 0.0)
+	for i in 120:
+		surfer.step(1.0 / 60.0)
+	_check(surfer.weight("bottom_turn") < 0.01, "a pose can be released again")
+	var model := WaveModel.new()
+	surfer.stand_on(model, 3.0, 0.5)
+	_check(surfer.position.is_equal_approx(model.surface_point(3.0, 0.5)), "the surfer stands on the wave surface")
+	surfer.free()

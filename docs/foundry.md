@@ -53,6 +53,17 @@ Step 7 proved the pipeline with a placeholder figure; step 8 replaced it with th
 - Fixed: the shorts were deformed twice (the copy already carried the body's Armature modifier and I added a second),
   which stretched them below the knees in crouches. They now fit the hips; a Corrective Smooth modifier relaxes bends.
 
+## Move poses from footage (`tools/foundry/refs/`)
+
+The 1080p60 source was downloaded with the owner's OK to `storyboardimages/jbay_refs/` (gitignored). Per move:
+`scout.py` (contact sheet to find the shot), `extract_move.py` (tracks the board by colour, crops a square that follows
+the surfer, upscales to 512, writes `SHEET_<move>.jpg`), `pose_landmarks.py` (MediaPipe pose landmarker, CPU; needs
+`pose_landmarker_heavy.task` from Google's MediaPipe model bucket, about 30 MB, in the same folder), and
+`solve_pose.py` (landmarks to the parametric poses in `poses/<move>.json`). Then
+`.	oolsoundryoundry.ps1 -Frames 8 -Name bottom_turn` renders the move, and a yaw-0 render next to the crops
+makes `COMPARE_<move>.png`. Done so far: bottom turn (0 to 1.2 s of the clip; the torso fold is floored at about 35
+degrees in the later frames because MediaPipe under-reads it there). Not yet: the other seven moves, finger curl, the pocket flap.
+
 ## Frame format ("toon")
 
 One PNG per frame, three panels wide (468 x 420 each; taller than the Kling frames so a rolled board is not cut off,

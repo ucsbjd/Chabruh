@@ -41,6 +41,7 @@ if len(argv) > 3:  # a debug camera yaw in degrees (90 is a side view), to inspe
 
 # Board-local layout. The deck top is DECK_Z above the origin; ankles sit ANKLE_H over the sole.
 DECK_Z = 0.08
+SPINE_BEND_WEIGHTS = (0.35, 0.30, 0.20, 0.10, 0.05)  # spine05 (lowest) to spine01
 FOOT_X = {"L": -0.40, "R": 0.36}  # left foot forward, toward the nose at -X
 
 # name, board roll, board pitch, board lift, hips down, hip yaw, bend forward, lean toward travel, twist, look,
@@ -61,6 +62,9 @@ POSES = [
     dict(name="air", roll=-26, pitch=22, lift=0.12, down=0.26, yaw=24, bend=12, lean=4, twist=12, look=45,
          hl=(-0.50, 0.12, 0.36), hr=(0.50, 0.12, 0.42)),
 ]
+SET_NAME = argv[4] if len(argv) > 4 else "surfer"
+if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")):  # solved from reference footage
+    POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poses", SET_NAME + ".json")))
 POSES = POSES[:POSE_LIMIT]
 
 
@@ -467,9 +471,12 @@ def main():
         set_world(rig, "root", Matrix.Translation((0, 0, -pose["down"] + pose["lift"])) @ M)
         update()
         parts = ["spine05", "spine04", "spine03", "spine02", "spine01"]
-        for name in parts:
-            R = rot("X", -pose["bend"] / 5) @ rot("Y", -pose["lean"] / 5) @ rot("Z", pose["twist"] / 5)
+        # Forward flexion is weighted toward the lower back, so the upper back (and the tattoo) stays turned to the camera.
+        for name, wb in zip(parts, SPINE_BEND_WEIGHTS):
+            R = rot("X", -pose["bend"] * wb) @ rot("Y", -pose["lean"] / 5) @ rot("Z", pose["twist"] / 5)
             rotate_bone(rig, name, R)
+        # The back knee tucks in toward the front leg by knee_r_in (0 to 1).
+        poles["footR"].location.x = FOOT_X["R"] - 0.10 - 1.5 * pose.get("knee_r_in", 0.0)
         for name, share in (("neck01", 0.2), ("neck02", 0.2), ("neck03", 0.2), ("head", 0.4)):
             rotate_bone(rig, name, rot("Z", pose["look"] * share - pose["twist"] * share))
         for s, key in (("L", "hl"), ("R", "hr")):

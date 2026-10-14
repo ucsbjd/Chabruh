@@ -26,19 +26,26 @@ const PERSON_METERS := 1.8
 const ANIMATIONS := {
 	"ride": {"frames": 35, "fps": 12.0, "ping_pong": true, "format": "flat"},
 	"surfer": {"frames": 6, "fps": 1.2, "ping_pong": false, "format": "toon"},
+	# Solved from the reference clip (tools/foundry/refs); plays once, then the surfer returns to what he was doing.
+	"bottom_turn": {"frames": 8, "fps": 7.0, "ping_pong": false, "format": "toon", "once": true},
 }
 
 ## The order the gallery and the P key step through.
-const ORDER: Array[String] = ["ride", "surfer"]
+const ORDER: Array[String] = ["ride", "surfer", "bottom_turn"]
 
 const LABELS := {
 	"ride": "ride",
 	"surfer": "toon surfer, six poses",
+	"bottom_turn": "bottom turn (plays once)",
 }
 
 
 static func has_animation(animation_name: String) -> bool:
 	return ANIMATIONS.has(animation_name)
+
+
+static func is_once(animation_name: String) -> bool:
+	return ANIMATIONS.has(animation_name) and ANIMATIONS[animation_name].get("once", false)
 
 
 static func is_toon(animation_name: String) -> bool:

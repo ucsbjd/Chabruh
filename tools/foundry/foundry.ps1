@@ -12,7 +12,7 @@ $out = "$repo\game\assets\sprites\surfer"
 New-Item -ItemType Directory -Force $work, $out, $decals | Out-Null
 $clock = [Diagnostics.Stopwatch]::StartNew()
 uv run --project $here python "$here\make_decals.py" $decals
-& $blender -b --python "$here\render_character.py" -- $work $decals $Frames | Where-Object { $_ -match "^foundry:|Error|Traceback" }
+& $blender -b --python "$here\render_character.py" -- $work $decals $Frames 18 $Name | Where-Object { $_ -match "^foundry:|Error|Traceback" }
 if ($LASTEXITCODE -ne 0) { throw "Blender failed" }
 $render = $clock.Elapsed.TotalSeconds
 uv run --project $here python "$here\pack_frames.py" $work $out $Frames $Name

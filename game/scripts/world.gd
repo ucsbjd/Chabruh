@@ -61,6 +61,7 @@ var _focus := Vector3.ZERO
 var _ride_input := RideInput.new()
 var _tuning: TuningData = preload("res://data/tuning.tres")
 var _calibration: Calibration
+var _key_help := Label.new()
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
@@ -84,6 +85,7 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	_add_key_help()
 	for child in get_children():
 		if child is RidgeLayer:
 			child.build(HORIZON)
@@ -144,6 +146,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
 		elif event.pressed and not event.echo and event.keycode == KEY_B:
 			_throw_test_burst()
+		elif event.pressed and not event.echo and event.keycode == KEY_1:
+			_surfer.play_once("bottom_turn")
+		elif event.pressed and not event.echo and event.keycode == KEY_H:
+			_key_help.visible = not _key_help.visible
 	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
 	elif event is InputEventMouseButton:
 		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
@@ -215,6 +221,27 @@ func _read_held_keys(delta: float) -> void:
 		var keep_camera := _first_frame
 		set_wave(_stage.model.size + size_change, _stage.model.hollowness + hollow_change, rider.d)
 		_first_frame = keep_camera
+
+
+## A faint key list in the lower left for testing. H hides it.
+func _add_key_help() -> void:
+	_key_help.text = "1   bottom turn
+P   next animation
+B   spray burst
+M   mood
+R   reset
+- =   wave size
+[ ]   hollow
+H   hide this"
+	_key_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_key_help.modulate = Color(1, 1, 1, 0.6)
+	_key_help.add_theme_font_size_override("font_size", 15)
+	_key_help.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_key_help.add_theme_constant_override("outline_size", 5)
+	_key_help.add_theme_constant_override("line_spacing", -4)
+	_key_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_key_help.position += Vector2(14.0, -170.0)
+	add_child(_key_help)
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:

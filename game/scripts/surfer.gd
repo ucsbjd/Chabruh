@@ -12,6 +12,8 @@ static var STANDING_HEIGHT := SurferSprites.person_pixels()
 var toon_material := ShaderMaterial.new()
 var _sprite := AnimatedSprite2D.new()
 var _pose_name := ""
+## What to go back to when a one-shot move (a bottom turn) has played.
+var _return_pose := ""
 
 
 func _init() -> void:
@@ -21,6 +23,7 @@ func _init() -> void:
 	_sprite.offset = -SurferSprites.ANCHOR
 	_sprite.sprite_frames = _build_frames()
 	add_child(_sprite)
+	_sprite.animation_finished.connect(_on_animation_finished)
 	set_pose(SurferSprites.ORDER[0])
 
 
@@ -31,6 +34,26 @@ func set_pose(pose_name: String) -> void:
 	_pose_name = pose_name
 	_sprite.material = toon_material if SurferSprites.is_toon(pose_name) else null
 	_sprite.play(pose_name)
+
+
+## Plays a one-shot move, then goes back to the animation that was playing. A looping name just switches to it.
+func play_once(move_name: String) -> void:
+	if not SurferSprites.has_animation(move_name):
+		return
+	if not SurferSprites.is_once(move_name):
+		set_pose(move_name)
+		return
+	if not SurferSprites.is_once(_pose_name):
+		_return_pose = _pose_name
+	_pose_name = ""  # so the same move can be played again while it is still showing
+	set_pose(move_name)
+
+
+func _on_animation_finished() -> void:
+	if SurferSprites.is_once(_pose_name) and _return_pose != "":
+		var back := _return_pose
+		_pose_name = ""
+		set_pose(back)
 
 
 func pose_name() -> String:
@@ -60,7 +83,7 @@ static func _build_frames() -> SpriteFrames:
 		var info: Dictionary = SurferSprites.ANIMATIONS[animation_name]
 		frames.add_animation(animation_name)
 		frames.set_animation_speed(animation_name, info.fps)
-		frames.set_animation_loop(animation_name, true)
+		frames.set_animation_loop(animation_name, not info.get("once", false))
 		var count: int = info.frames
 		for i in count:
 			frames.add_frame(animation_name, load(SurferSprites.frame_path(animation_name, i)) as Texture2D)

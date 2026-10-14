@@ -10,6 +10,10 @@ const FOLDER := "res://assets/sprites/surfer/"
 ## Every frame of every animation is this big, with the board's centre on ANCHOR (in frame pixels).
 const FRAME_SIZE := Vector2(468.0, 360.0)
 const ANCHOR := Vector2(203.2, 355.3)
+## Toon frames are taller (so a rolled board is not cut off), drawn at the same scale and with the same anchor
+## from the top-left, and three panels wide (see shaders/surfer_toon.gdshader).
+const TOON_FRAME_SIZE := Vector2(468.0, 420.0)
+const TOON_PANELS := 3
 ## The height of a frame in meters, so the surfer can be scaled to a 1.8 m person: the tallest pose in a frame
 ## (standing up with the board under the feet) is just under this.
 const FRAME_METERS := 1.85
@@ -21,15 +25,15 @@ const PERSON_METERS := 1.8
 ## docs/foundry.md), tinted by the mood.
 const ANIMATIONS := {
 	"ride": {"frames": 35, "fps": 12.0, "ping_pong": true, "format": "flat"},
-	"placeholder": {"frames": 8, "fps": 8.0, "ping_pong": false, "format": "toon"},
+	"surfer": {"frames": 6, "fps": 1.2, "ping_pong": false, "format": "toon"},
 }
 
 ## The order the gallery and the P key step through.
-const ORDER: Array[String] = ["ride", "placeholder"]
+const ORDER: Array[String] = ["ride", "surfer"]
 
 const LABELS := {
 	"ride": "ride",
-	"placeholder": "placeholder (toon)",
+	"surfer": "toon surfer, six poses",
 }
 
 

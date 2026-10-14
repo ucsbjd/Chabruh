@@ -42,6 +42,10 @@ extends Resource
 @export var surfer_shorts := Color.BLACK
 @export var surfer_board := Color.BLACK
 @export var surfer_hair := Color.BLACK
+@export var surfer_ink := Color.BLACK
+@export var surfer_trim := Color.BLACK
+@export var surfer_stripe_a := Color.BLACK
+@export var surfer_stripe_b := Color.BLACK
 ## Warm tint on the lit band, the violet in the shade band, and the thin light along the sunward edge.
 @export var surfer_light := Color.BLACK
 @export var surfer_shade := Color.BLACK

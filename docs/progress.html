@@ -354,7 +354,7 @@ const STEPS = [
     ]
   },
   {
-    n: 9, status: "todo",
+    n: 9, status: "done",
     title: "Surfer foundry 3: the real-time 3D surfer (spike)",
     goal: "Replace the sprite surfer with a skinned 3D character living inside the wave's own 3D stage, drawn in the same flat toon look and tinted by the mood. A pass or fail spike: if it passes, every later step builds on it; if it fails, we go back to the sprite pose grid.",
     build: [
@@ -374,24 +374,58 @@ const STEPS = [
   },
   {
     n: 10, status: "todo",
-    title: "Carving physics and continuous 3D poses",
-    goal: "Riding feels like carving a snowboard down a mountain: the nose leads, speed comes from the slope, and moves emerge from the surfer's physical state instead of playing as clips. Nothing is committed, so the player can interrupt any move at any moment.",
+    title: "Carving physics: heading, speed and continuous 3D poses",
+    goal: "Riding feels like carving a snowboard down a mountain: the nose leads, speed comes from the slope, and moves emerge from the surfer's physical state instead of playing as clips. Nothing is committed, so any move can be interrupted at any moment.",
     build: [
-      "The full spec is in docs/step-10-physics-spec.md: heading theta, turn rate, speed, compression; slope gravity, carve drag, pump boost and the wave's upward draw; lead-and-follow springs (head and shoulders instantly, the board in about 50 ms, the hips in about 120 ms); soft boundary torques at the trough and crest.",
-      "Surfer3D takes its position and heading from that state: orientation from the wave surface, rail roll from turn rate times speed, and the bones blended continuously from the baked pose library by weights (bottom turn, top turn, cutback, vertical snap, barrel, crouch). Moves are labels the state earns (trim, bottom turn, top turn, cutback, hit the lip, floater, barrel, air, wipeout), so a bottom turn can never happen at the lip.",
-      "Decide how the mouse, trackpad or touch sets the target heading (the key design call), then re-run the calibration and replay tools and retune data/tuning.tres by feel.",
-      "Spray strength comes from speed times how sharply he turns, as before.",
-      "Finish the rest of the pose library (top turn, cutback, vertical snap, barrel, floater, air, wipeout) using the footage in storyboardimages/jbay_refs and the hand-posing workflow in docs/foundry.md."
+      "The reviewed spec is in docs/finger-surf-controls.md (the decisions section at the top says where it differs from the first draft). State on the wave: heading theta, turn rate omega, speed, compression; slope gravity, carve drag, pump and the wave's draw. Fixes found by simulating the draft equations: height changes need a sin(face angle) factor, speeds are set relative to the wave's own peel speed (the draft's 6.5 m/s trim would let the curl catch him), and zero input holds a trim heading that cancels the wave's draw.",
+      "Rider becomes the physics model (keeping its public d, u, speed, sharpness, move label for the spray and camera). Lead-and-follow springs: head and chest at once, the board in about 50 ms, the hips in about 120 ms.",
+      "Surfer3D takes position and heading from that state: orientation from the wave surface, rail roll from turn rate times speed, bones blended continuously from the baked poses by weights, and a lead twist on the neck and chest. Moves are labels the state earns (trim, bottom turn, top turn, cutback, hit the lip, floater, barrel, air, wipeout); spray strength is speed times sharpness as before.",
+      "Poses needed to make it read: add top turn and cutback to the baked library (hand-posing workflow in docs/foundry.md, footage in storyboardimages/jbay_refs). The rest of the library comes in step 12.",
+      "Until step 11 replaces the controls, the existing mouse, wheel and trackpad input is mapped to a target heading and a drive, so the physics can be felt and tuned. Expose every dial in data/tuning.tres and add a faint on-screen readout (speed, heading, move label) for testing, hidden with H."
     ],
-    notNow: ["The full wave cycle and sound (later steps)."],
+    notNow: ["The finger-surf control scheme and calibration (step 11), the remaining poses, lighting fixes and wipeout (step 12)."],
     verify: [
       "Dropping down the face, the nose leads and speed builds; carving back up trades speed for height; the move names fit what I did.",
-      "I can reverse any turn mid-way and the response is immediate, with a believable sense of weight.",
-      "A bottom turn only happens low on the face, a top turn high, and spray follows the sharpness of the turn."
+      "I can reverse any turn midway and the response is immediate, with a believable sense of weight.",
+      "A bottom turn only happens low on the face and a top turn high; stalling too long lets the curl catch him softly; spray follows the sharpness of the turn."
     ]
   },
   {
     n: 11, status: "todo",
+    title: "Finger-surf controls and calibration",
+    goal: "Two fingers on the trackpad or screen are the surfer's two feet on a finger-sized surfboard: forgiving big sweeps carve, lifting and re-centring the fingers never jerks him, and the game learns how this player moves.",
+    build: [
+      "Spec and decisions: docs/finger-surf-controls.md. A virtual stick from relative finger deltas only (never absolute pad position), a forgiving response curve (dead zone, then a curved ramp, sized by each player's own full sweep), and a clutching engine: drop the last 30 ms of a lift-off, coast on the current line while the hand resets, ramp the input back in over about 60 ms.",
+      "One code path for touch and trackpad. Touch gives true two-finger positions, spread and twist; the Windows trackpad only gives scroll steps (see the step 6 findings), so whip and snap are read from path curvature and speed, and twist is optional.",
+      "Ship rule-based snaps, floaters and cutbacks first (gesture features gated by where he is on the face), scaled by the calibration; add template matching only if the rules misfire.",
+      "Calibration: extend the existing recorder (tools/calibrate.ps1, tools/analyze_calibration.py, tools/replay.ps1) with the five actions (trim and clutch, open carve, hit the lip, floater, cutback), five trials each, robust to the one worst trial, saved to user://control_profile.json and also available from an in-game option. Replay existing recordings through the new input to retune data/tuning.tres.",
+      "Keyboard stays as the fallback. Never let the wheel scroll the page."
+    ],
+    notNow: ["The full wave cycle, sound and ship polish."],
+    verify: [
+      "On my trackpad, big smooth sweeps carve, small movements trim calmly, and lifting my fingers to re-centre never flicks him.",
+      "Whipping my fingers at the crest snaps the lip, holding up at the crest floats, and a wide arc back cuts back; each can be interrupted.",
+      "Running the calibration changes how far I need to sweep, and the replay tool shows my recorded runs feel right."
+    ]
+  },
+  {
+    n: 12, status: "todo",
+    title: "3D surfer polish: poses, lighting, hands",
+    goal: "Finish the real-time surfer so he looks good from every state: the full pose library, lighting that reads cleanly on his back in every mood, and the small details.",
+    build: [
+      "Remaining baked poses: vertical snap, barrel, floater, air, wipeout (soft tumble), and a refined crouch, from footage in storyboardimages/jbay_refs and the hand-posing workflow.",
+      "Fix the funky lighting on his back in the three moods (normals, band thresholds, rim side, mood colours), keeping the big flat bands.",
+      "Finger curl, the pocket flap and button, the palm print, a face that holds up in profile; optional runtime foot pinning so poses blending never slides his feet.",
+      "Camera sway tied to his heading, now that he lives in the same 3D stage."
+    ],
+    notNow: ["Sound and the wave cycle."],
+    verify: [
+      "A contact sheet of all poses in the three moods, in the wave, reads clean and matches the look sheet and the key frames.",
+      "Blending between any two poses never pops or slides the feet."
+    ]
+  },
+  {
+    n: 13, status: "todo",
     title: "Wave cycle: lineup, set, barrel",
     goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
     build: [
@@ -409,7 +443,7 @@ const STEPS = [
     ]
   },
   {
-    n: 12, status: "todo",
+    n: 14, status: "todo",
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
@@ -427,7 +461,7 @@ const STEPS = [
     ]
   },
   {
-    n: 13, status: "todo",
+    n: 15, status: "todo",
     title: "Mobile polish and ship v0.1",
     goal: "Something I can send to a friend's phone.",
     build: [

@@ -15,6 +15,8 @@ const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel":
 
 func _initialize() -> void:
 	var options := _read_options()
+	var ride_from := -1.0
+	var ride_to := -1.0
 	var world: Control = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(world)
 	await process_frame   # let the scene finish its _ready before configuring it
@@ -28,10 +30,13 @@ func _initialize() -> void:
 	if options.height != "":  # "0.9" holds there; "0.9:0.05" starts at 0.9 and aims at 0.05
 		var heights: PackedStringArray = options.height.split(":")
 		world.rider.place(world.rider.d, Rider.u_for(float(heights[0])))
-		world._ride_input.height = float(heights[heights.size() - 1])
+		ride_from = float(heights[0])
+		ride_to = float(heights[heights.size() - 1])
+		world._ride_input.height = ride_from
 	if options.gallery == "yes":
 		world.get_node("PoseGallery").open()
 	var frames := int(options.frames)
+	var ride_frames := 40  # a ride from one height to another is a scroll over this many frames
 	var timed_from := 0
 	var snaps: Array[int] = []
 	for text: String in String(options.snaps).split(",", false):
@@ -42,6 +47,8 @@ func _initialize() -> void:
 			timed_from = Time.get_ticks_usec()
 		for strength: float in bursts.get(i, []):
 			world.burst(strength)
+		if ride_from >= 0.0 and ride_from != ride_to:
+			world._ride_input.height = lerpf(ride_from, ride_to, clampf(float(i) / ride_frames, 0.0, 1.0))
 		await process_frame
 		if i in snaps:
 			root.get_texture().get_image().save_png(String(options.out).trim_suffix(".png") + "-%d.png" % i)

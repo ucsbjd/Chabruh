@@ -45,6 +45,8 @@ var sharpness := 0.0
 var move := "trim"
 
 var _fresh := true
+var _stick := 0.0                    # radians of heading the player is asking for; fades when the input stops
+var _last_height := -1.0
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
@@ -76,6 +78,8 @@ func place(meters_ahead: float, face_height: float) -> void:
 	omega = 0.0
 	compression_vel = 0.0
 	_fresh = true
+	_stick = 0.0
+	_last_height = -1.0
 
 
 func step(delta: float, steer: float, height: float, model: WaveModel, tuning: TuningData) -> void:
@@ -88,18 +92,23 @@ func step(delta: float, steer: float, height: float, model: WaveModel, tuning: T
 	var v_max := MAX_SPEED * peel
 	var face_h := maxf(1.2, model.crest_height_at(d))
 	var sin_phi := sin(model.face_angle(u))
-	# The wave's own pull up the face. Holding a line needs a slightly nose-down heading that cancels it (theta_trim).
+	# The wave's own pull up the face. With no input he is carried up it slowly (drift_climb, meters per second of
+	# rise); holding his line takes a small nose-down heading, and pushing up or down the face starts from there.
 	var draw := tuning.v_draw_base * clampf(face_h / 2.5, 0.4, 1.3)
 	if _fresh:
 		_fresh = false
 		v = v_trim
-		theta = -asin(clampf(draw / maxf(v * sin_phi, 0.5), 0.0, 0.6))
-	var theta_trim := -asin(clampf(draw / maxf(v * sin_phi, 0.5), 0.0, 0.6))
+		theta = asin(clampf((tuning.drift_climb - draw) / maxf(v * sin_phi, 0.5), -0.6, 0.6))
+	var theta_trim := asin(clampf((tuning.drift_climb - draw) / maxf(v * sin_phi, 0.5), -0.6, 0.6))
 
-	# Interim input: aim at a point on the wave. Height error becomes a heading, distance error a drive.
-	var want_u := u_for(height)
+	# Interim input: the change in the height setting (wheel, trackpad scroll, arrow keys) pushes a virtual stick that
+	# fades back to centre, so scrolling down points the nose down and letting go lets the wave take him again.
+	# Where along the wave to aim (the steering) stays a point on the wave, followed by driving faster or slower.
+	if _last_height >= 0.0:
+		_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + (height - _last_height) * tuning.stick_gain, -1.2, 1.2)
+	_last_height = height
 	var want_d := d_for(steer)
-	var target_theta := clampf(theta_trim + clampf(tuning.heading_gain * (want_u - u), -1.0, 1.0), THETA_MIN, THETA_MAX)
+	var target_theta := clampf(theta_trim + _stick, THETA_MIN, THETA_MAX)
 	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them.
 	if u < 0.15 and target_theta < 0.0:
 		target_theta = lerpf(0.0, target_theta, clampf(u / 0.15, 0.0, 1.0))
@@ -119,7 +128,7 @@ func step(delta: float, steer: float, height: float, model: WaveModel, tuning: T
 	# Energy: the slope gives speed going down and takes it going up, water and carving take some, and extending
 	# out of a crouch in the middle of a carve pumps. Drag is chosen so that the trim heading settles at trim speed.
 	var phi_mid := model.face_angle(0.5)
-	var ref_trim := asin(clampf(draw / (v_trim * sin(phi_mid)), 0.0, 0.6))
+	var ref_trim := asin(clampf((draw - tuning.drift_climb) / (v_trim * sin(phi_mid)), 0.0, 0.6))
 	var k_water := tuning.g_eff * sin(phi_mid) * sin(ref_trim) / (v_trim * v_trim)
 	var a_slope := -tuning.g_eff * sin_phi * sin(theta)
 	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v

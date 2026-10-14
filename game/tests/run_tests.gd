@@ -341,23 +341,28 @@ func _test_riding() -> void:
 	var rider := Rider.new()
 	rider.place(3.0, 0.5)
 	for i in 900:
-		rider.step(1.0 / 60.0, 0.9, 1.0, wave, tuning)
-	_check(absf(rider.d - Rider.d_for(0.9)) < 0.6 and absf(rider.u - Rider.u_for(1.0)) < 0.06, "the surfer settles where they were pointed (d %.2f of %.2f, u %.2f)" % [rider.d, Rider.d_for(0.9), rider.u])
+		rider.step(1.0 / 60.0, 0.9, RideInput.REST_HEIGHT, wave, tuning)
+	_check(absf(rider.d - Rider.d_for(0.9)) < 0.7, "the surfer settles where they steer along the wave (d %.2f of %.2f)" % [rider.d, Rider.d_for(0.9)])
 	var holder := Rider.new()
-	holder.place(3.0, 0.5)
-	for i in 900:
+	holder.place(3.0, 0.4)
+	for i in 180:
 		holder.step(1.0 / 60.0, RideInput.REST_STEER, RideInput.REST_HEIGHT, wave, tuning)
-	_check(absf(holder.u - Rider.u_for(RideInput.REST_HEIGHT)) < 0.06 and absf(holder.d - Rider.d_for(RideInput.REST_STEER)) < 0.6, "with no input the wave does not carry him off the line (u %.2f, d %.2f)" % [holder.u, holder.d])
+	_check(holder.u > 0.4 + 0.01 and holder.u < 0.4 + 0.3, "with no input the wave carries him slowly up the face (0.40 to %.2f in 3 s)" % holder.u)
 	var diver := Rider.new()
-	diver.place(3.0, 0.85)
+	diver.place(3.0, 0.7)
 	var v_start := 0.0
 	var v_dive := 0.0
-	for i in 120:
-		diver.step(1.0 / 60.0, 0.49, 0.0, wave, tuning)
+	for i in 90:
+		diver.step(1.0 / 60.0, 0.49, maxf(0.7 - 0.01 * i, 0.0), wave, tuning)  # scrolling down
 		if i == 0:
 			v_start = diver.v
 		v_dive = maxf(v_dive, diver.v)
-	_check(v_dive > v_start + 0.5 and diver.theta < 0.0 or diver.u < 0.5, "dropping down the face builds speed and points the nose down (v %.1f to %.1f)" % [v_start, v_dive])
+	_check(diver.theta < 0.0 and diver.u < 0.7 and v_dive > v_start + 0.5, "scrolling down points the nose down, drops him and builds speed (v %.1f to %.1f)" % [v_start, v_dive])
+	var climber := Rider.new()
+	climber.place(3.0, 0.3)
+	for i in 60:
+		climber.step(1.0 / 60.0, 0.49, minf(0.3 + 0.01 * i, 1.0), wave, tuning)  # scrolling up
+	_check(climber.theta > holder.theta and climber.u > 0.3, "scrolling up points the nose up the face")
 	var wild := Rider.new()
 	wild.place(3.0, 0.5)
 	var inside := true

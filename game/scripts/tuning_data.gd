@@ -42,8 +42,12 @@ extends Resource
 @export var v_draw_base: float = 1.1
 ## The sharpest the board can turn, rad/s.
 @export var max_omega: float = 3.5
-## Until the finger controls (step 11): radians of target heading per unit of face height still to climb or drop.
-@export var heading_gain: float = 2.0
+## Until the finger controls (step 11), scrolling is a virtual stick: radians of heading per unit of height scrolled, and how
+## long the stick takes to fade back to centre once the scrolling stops.
+@export var stick_gain: float = 7.0
+@export var stick_decay: float = 0.55
+## With no input at all the wave carries him up the face at about this many meters per second of height.
+@export var drift_climb: float = 0.3
 ## Until step 11: how hard the surfer drives toward the point on the wave being aimed at.
 @export var drive_reach: float = 0.35
 @export var drive_gain: float = 1.2

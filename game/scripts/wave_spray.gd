@@ -18,6 +18,11 @@ const GRAVITY_METERS := 6.0
 const DRAG := Vector2(0.7, 1.3)
 const DROPLET_SCALE := 0.7
 const REFERENCE_PIXELS_PER_METER := 104.0
+## The barrel's spit as the surfer comes out: a dense, flat cloud blown out of the tube past him, down the line.
+const BLAST_AMOUNT := 150
+const BLAST_HALF_WIDTH := 14.0
+const BLAST_SPEEDS := Vector2(4.0, 11.0)
+const BLAST_LIFETIME := 1.1
 
 var _emitters: Array[CPUParticles2D] = []
 var _last_phase: Array[float] = []
@@ -25,6 +30,7 @@ var _droplet := SprayTextures.droplet()
 var _gradient := Gradient.new()
 var _fall_off := Curve.new()
 var _spat := 0
+var _blast := CPUParticles2D.new()
 
 
 func _init() -> void:
@@ -59,6 +65,20 @@ func _init() -> void:
 		add_child(emitter)
 		_emitters.append(emitter)
 		_last_phase.append(-1.0)
+	_blast.emitting = false
+	_blast.one_shot = true
+	_blast.explosiveness = 0.75
+	_blast.local_coords = false
+	_blast.texture = _droplet
+	_blast.particle_flag_align_y = true
+	_blast.spread = BLAST_HALF_WIDTH
+	_blast.damping_min = DRAG.x
+	_blast.damping_max = DRAG.y
+	_blast.scale_amount_curve = _fall_off
+	_blast.color_ramp = _gradient
+	_blast.lifetime = BLAST_LIFETIME
+	_blast.amount = BLAST_AMOUNT
+	add_child(_blast)
 
 
 ## Call every frame: follows the break on screen and fires the spit as each lip lands.
@@ -101,9 +121,25 @@ func spit(strength: float, stage: WaveStage) -> void:
 	_spat += 1
 
 
+## The barrel spits him out: a dense cloud from `at` (pixels) toward `centre_degrees` on screen (0 right, negative up).
+func blast(at: Vector2, pixels_per_meter: float, centre_degrees: float, strength := 1.0) -> void:
+	var s := clampf(strength, 0.0, 1.0)
+	_blast.position = at
+	_blast.direction = Vector2.from_angle(deg_to_rad(centre_degrees))
+	_blast.amount = int(lerpf(BLAST_AMOUNT * 0.4, BLAST_AMOUNT, s))
+	_blast.initial_velocity_min = BLAST_SPEEDS.x * pixels_per_meter
+	_blast.initial_velocity_max = lerpf(BLAST_SPEEDS.x * 1.5, BLAST_SPEEDS.y, s) * pixels_per_meter
+	_blast.gravity = Vector2(0.0, GRAVITY_METERS * 0.5 * pixels_per_meter)
+	var droplet_scale := DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
+	_blast.scale_amount_min = droplet_scale * 0.5
+	_blast.scale_amount_max = droplet_scale * 1.2
+	_blast.restart()
+	_blast.emitting = true
+
+
 ## The most droplets the spit can have alive at once.
 func particle_budget() -> int:
-	var total := 0
+	var total := _blast.amount
 	for emitter in _emitters:
 		total += emitter.amount
 	return total

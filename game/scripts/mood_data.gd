@@ -36,6 +36,8 @@ extends Resource
 @export var hollow_glow := Color.BLACK
 @export var foam_lit := Color.BLACK
 @export var foam_shade := Color.BLACK
+## The warm (or neon) highlight on the outer droplets of a big fan when the ride is flowing.
+@export var spray_rim := Color.BLACK
 
 @export_group("Surfer")
 @export var surfer_skin := Color.BLACK

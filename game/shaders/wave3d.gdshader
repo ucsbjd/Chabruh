@@ -40,9 +40,35 @@ uniform vec4 foam_lit : source_color;
 uniform vec4 foam_shade : source_color;
 uniform vec4 sea_horizon : source_color;
 
+// The reef (SectionDirector): two sections as (centre d, half width, height gain, kind), where kind is 0 wall,
+// 1 channel, 2 racecourse, 3 bowl; and the swell, the whole wave's height as a factor (near 0 in a lull).
+// WaveModel.section_key does the same sums for the rider, so keep them together.
+uniform vec4 reef_a = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform vec4 reef_b = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform float swell = 1.0;
+
+float reef_weight(vec4 r, float d) {
+	return 1.0 - smoothstep(0.0, 1.0, abs(d - r.x) / r.y);
+}
+
+// How much of the wave's height the reef and the swell give it at d.
+float reef_scale(float d) {
+	return swell * (1.0 + reef_weight(reef_a, d) * reef_a.z + reef_weight(reef_b, d) * reef_b.z);
+}
+
+// How much bowl (kind 3) or of the kinds from `kind` up (2: racecourse and bowl) there is at d, 0 to 1.
+float reef_kind(float d, float kind) {
+	return min(reef_weight(reef_a, d) * step(kind - 0.5, reef_a.w) + reef_weight(reef_b, d) * step(kind - 0.5, reef_b.w), 1.0);
+}
+
+// Over a bowl the foot of the face is drawn in toward the wave (WaveModel.SUCK_OUT and SUCK_TOP).
+const float SUCK_OUT = 0.22;
+const float SUCK_TOP = 0.45;
+
 varying vec3 wpos;
 varying float crash;
 varying float whitewater_here;
+varying float bowl_here;
 
 void vertex() {
 	float lip_here = UV2.x;
@@ -59,13 +85,18 @@ void vertex() {
 	VERTEX.yz = thrown + (CUSTOM0.xy - thrown) * lift + (CUSTOM0.zw - thrown) * fall;
 	crash = fall;
 
+	// The reef: the wall stands taller or lower where a section is, and over a bowl the trough drains in toward it.
+	bowl_here = reef_kind(d, 3.0);
+	VERTEX.yz *= reef_scale(d);
+	VERTEX.z *= 1.0 - SUCK_OUT * bowl_here * (1.0 - smoothstep(0.0, SUCK_TOP, COLOR.r));
+
 	// The whitewater heaves and rolls toward the beach. The foot of it stays on the water.
 	float whitewater = UV2.y;
 	whitewater_here = whitewater;
 	float heave = textureLod(noise_warp, vec2(VERTEX.x * 0.11 + time * 0.03, VERTEX.z * 0.2 - time * 0.12), 0.0).r - 0.5;
 	// A second, faster and smaller chop on top, so the whitewater is lumpy and never smooth.
 	float chop = textureLod(noise_warp, vec2(VERTEX.x * 0.4 - time * 0.2, VERTEX.z * 0.55 + time * 0.35), 0.0).r - 0.5;
-	float rough = whitewater * COLOR.g * (0.35 + COLOR.r);
+	float rough = whitewater * COLOR.g * (0.35 + COLOR.r) * swell;
 	VERTEX.y += (heave * boil_height + chop * 0.7) * rough;
 	VERTEX.z += (heave * 0.9 + chop * 0.5) * rough;
 
@@ -127,6 +158,9 @@ void fragment() {
 	float cell = texture(noise_cells, flow_uv * vec2(0.095, 0.065)).r;
 	float vein = (1.0 - smoothstep(0.022, 0.022 + fwidth(cell) * 1.0, cell)) * (1.0 - smoothstep(0.62, 0.92, h)) * clamp(1.0 - cav * 1.6, 0.0, 1.0);
 	col = mix(col, mix(foam_shade.rgb, foam_lit.rgb, 0.6), vein * 0.65);
+
+	// Over a bowl the drained foot of the face is darker: the reef is right under it.
+	col = mix(col, wave_shadow.rgb, bowl_here * 0.4 * (1.0 - smoothstep(0.0, 0.3, h)));
 
 	// Inside the barrel: dark violet-navy, glowing where light shines through the thin lip.
 	col = mix(col, hollow_dark.rgb, cav * 0.80);

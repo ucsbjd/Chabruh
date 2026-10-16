@@ -54,6 +54,12 @@ const LIP_LENGTH := 7.0              # how far behind the peel point the thrown 
 const POCKET_AHEAD := 3.8            # the pocket runs from here ahead of the peel point...
 const POCKET_BEHIND := -0.4          # ...to here, just behind it
 const BARREL_THRESHOLD := 0.35       # how much barrel there must be for the tube zone to exist
+# The reef under the wave (SectionDirector): a deep channel calms the face and its push, a bowl sucks the foot of the face
+# in toward the wave (the trough drains, so the face gets steeper at the base) and draws harder up it.
+const CHANNEL_CALM := 0.6            # how much a deep channel relaxes the face, like the shoulder does (see shoulder_at)
+const BOWL_DRAW := 0.25              # how much harder the water draws up the face over a bowl
+const SUCK_OUT := 0.22               # how much nearer the wave the trough is pulled over a full bowl...
+const SUCK_TOP := 0.45               # ...easing to nothing at this height up the wave
 
 # Cross-section proportions, as fractions of the wave height.
 const LIP_THICKNESS := 0.14          # at the crest, tapering to a thin tip
@@ -87,6 +93,20 @@ var peel_angle_degrees := 40.0:
 ## The wave's own speed toward the beach, in meters per second.
 var celerity := 5.0
 
+## The reef the wave is peeling over, or null for an even one. Its sections change the wave live (height, the trough's
+## suck-out, the draw and push), and the same numbers go to the shaders, so nothing is rebuilt for them.
+var reef: SectionDirector = null
+## The reef's size and hollowness offsets near the peel point when the mesh was last built: the curl and the barrel are
+## baked into the mesh, so they follow the reef in small steps (WaveStage.reshape), not live.
+var reef_size := 0.0
+var reef_hollow := 0.0
+## How much faster than usual the break peels right now (the reef section at the peel point, the dropping tide).
+var peel_mult := 1.0
+## The whole wave's height as a factor, live: 1 normally, near 0 in a lull when the sea goes glassy.
+var swell := 1.0:
+	set(value):
+		swell = clampf(value, 0.02, 1.0)
+
 
 ## Speed of the break along the crest: celerity / sin(peel angle) (Walker, 1974).
 static func peel_speed_for(wave_celerity: float, angle_degrees: float) -> float:
@@ -99,7 +119,29 @@ static func peel_angle_for(wave_celerity: float, peel_speed: float) -> float:
 
 
 func peel_speed() -> float:
-	return peel_speed_for(celerity, peel_angle_degrees)
+	return peel_speed_for(celerity, peel_angle_degrees) * peel_mult
+
+
+## The hollowness the curl is shaped with: the dial plus the reef's offset at the peel point.
+func shape_hollow() -> float:
+	return clampf(hollowness + reef_hollow, 0.0, 1.0)
+
+
+## The wave's height at d as a factor of its built height, live: the reef sections and the swell.
+func scale_at(d: float) -> float:
+	if reef == null:
+		return swell
+	return swell * (1.0 + reef.size_delta_at(d) * (MAX_HEIGHT - MIN_HEIGHT) / height())
+
+
+## How much reef bowl there is under d, 0 to 1.
+func bowl_at(d: float) -> float:
+	return reef.weight_of(SectionDirector.Kind.REEF_BOWL, d) if reef != null else 0.0
+
+
+## How much deep channel there is under d, 0 to 1.
+func channel_at(d: float) -> float:
+	return reef.weight_of(SectionDirector.Kind.DEEP_CHANNEL, d) if reef != null else 0.0
 
 
 ## Height of the wall nearest the peel point, in meters.
@@ -109,7 +151,7 @@ func height() -> float:
 
 ## How much barrel there is, 0 to 1: needs a hollow wave and enough height to hold a tube.
 func barrel() -> float:
-	return smoothstep(0.55, 0.9, hollowness) * smoothstep(0.35, 0.8, size)
+	return smoothstep(0.55, 0.9, shape_hollow()) * smoothstep(0.35, 0.8, clampf(size + reef_size, 0.0, 1.0))
 
 
 ## How far ahead of the peel point the wall takes to taper down to its far end.
@@ -142,8 +184,13 @@ func mist_at(d: float) -> float:
 	return clampf(0.18 * taper_at(d) + 0.82 * exp(-near_break * near_break) + 0.6 * whitewater_at(d), 0.0, 1.0)
 
 
-## Height of the crest above the trough, in meters.
+## Height of the crest above the trough, in meters, as it is now (with the reef and the swell).
 func crest_height_at(d: float) -> float:
+	return base_crest_height_at(d) * scale_at(d)
+
+
+## The crest height the mesh is built with, before the live reef and swell scale it.
+func base_crest_height_at(d: float) -> float:
 	return height() * taper_at(d) * collapse_at(d) * roll_at(d) * peak_at(d)
 
 
@@ -165,15 +212,20 @@ func shoulder_at(d: float) -> float:
 ## is what lifts a surfer and so, pointed down the line, what drives him: the wave's power.
 func draw_at(d: float, u: float) -> float:
 	var size_factor := clampf(crest_height_at(d) / 2.5, 0.4, 1.3)
-	var calm := 1.0 - SHOULDER_CALM * shoulder_at(d)
+	var calm := 1.0 - SHOULDER_CALM * calm_at(d)
 	var profile := lerpf(LOW_DRAW, 1.0, smoothstep(0.0, 0.35, u)) * (1.0 + LIP_DRAW * throw_at(d) * smoothstep(0.5, 0.9, u))
-	return size_factor * calm * profile
+	return size_factor * calm * profile * (1.0 + BOWL_DRAW * bowl_at(d))
 
 
 ## How much the wave pushes a surfer along at d, 0 to 1: all of it in the pocket by the peak, less down the shoulder as
 ## the face shrinks and relaxes, and some still in the whitewater behind the break.
 func power_at(d: float) -> float:
-	return clampf(taper_at(d) * (1.0 - SHOULDER_SLACK * shoulder_at(d)) * lerpf(1.0, WHITEWATER_PUSH, whitewater_at(d)), 0.0, 1.0)
+	return clampf(taper_at(d) * (1.0 - SHOULDER_SLACK * calm_at(d)) * lerpf(1.0, WHITEWATER_PUSH, whitewater_at(d)), 0.0, 1.0)
+
+
+## How relaxed the face is at d for riding, 0 to 1: the shoulder, and a deep channel where the wave softens.
+func calm_at(d: float) -> float:
+	return clampf(shoulder_at(d) + CHANNEL_CALM * channel_at(d), 0.0, 1.0)
 
 
 ## How much of the wave has turned to whitewater at d, 0 to 1: nothing ahead of the break, all of it
@@ -211,7 +263,7 @@ func foam_at(d: float) -> float:
 ## Angle of the face from horizontal, in radians: gentle at the base, steeper toward the crest,
 ## and steeper overall on hollow waves. The pull down the face is sin of this.
 func face_angle(u: float) -> float:
-	var crest_angle := lerpf(55.0, 88.0, hollowness)
+	var crest_angle := lerpf(55.0, 88.0, shape_hollow())
 	return deg_to_rad(lerpf(15.0, crest_angle, u * u))
 
 
@@ -233,7 +285,7 @@ func barrel_amount_at(at_d: float, at_u: float) -> float:
 	return barrel() * (1.0 - smoothstep(0.35, 0.7, at_u))
 
 
-## The cross-section of the wave at d. See WaveSection for the layout.
+## The cross-section of the wave at d, as it is now. See WaveSection for the layout.
 ##
 ## It is built from simple curves: a gentle back slope, then an outer arc over the crest that is
 ## thrown forward into the lip, a thin tip, an inner arc back under the lip (the roof of the
@@ -244,10 +296,25 @@ func section(d: float) -> WaveSection:
 	return section_key(d, LipShape.THROWN)
 
 
-## The cross-section at d in one of the lip cycle's three shapes. All three have the same points and
-## the same trough, so the shader can morph between them point by point.
+## The cross-section at d in one of the lip cycle's three shapes, as it is now: the built shape scaled by the reef and
+## the swell, with the trough drawn in over a bowl. wave3d.gdshader does the same to the mesh, so they agree.
 func section_key(d: float, shape: LipShape) -> WaveSection:
-	var height_here := crest_height_at(d)
+	var result := base_section_key(d, shape)
+	var k := scale_at(d)
+	var suck := SUCK_OUT * bowl_at(d)
+	if k == 1.0 and suck == 0.0:
+		return result
+	for i in result.points.size():
+		var p := result.points[i] * k
+		p.x *= 1.0 - suck * (1.0 - smoothstep(0.0, SUCK_TOP, result.height_fraction[i]))
+		result.points[i] = p
+	return result
+
+
+## The cross-section at d in one of the lip cycle's three shapes, as the mesh is built. All three have the same points
+## and the same trough, so the shader can morph between them point by point.
+func base_section_key(d: float, shape: LipShape) -> WaveSection:
+	var height_here := base_crest_height_at(d)
 	var curl := curl_at(d)
 	var foam_here := foam_at(d)
 	var activity := throw_at(d)
@@ -265,9 +332,9 @@ func section_key(d: float, shape: LipShape) -> WaveSection:
 ## Where the foot of the wave is, in z. The face runs longer and gentler down the shoulder, and a
 ## full barrel pulls the foot in to the barrel's own radius.
 func trough_z_at(d: float) -> float:
-	var wave_h := maxf(crest_height_at(d), 0.03)
+	var wave_h := maxf(base_crest_height_at(d), 0.03)
 	var curl := curl_at(d)
-	var run := wave_h * lerpf(2.0, 1.1, hollowness) * (1.0 + SHOULDER_RUN * shoulder_at(d))
+	var run := wave_h * lerpf(2.0, 1.1, shape_hollow()) * (1.0 + SHOULDER_RUN * shoulder_at(d))
 	return lerpf(run, curl * BARREL_RADIUS * wave_h * barrel_aspect(curl), curl)
 
 
@@ -282,7 +349,7 @@ func section_for(crest_meters: float, curl: float, foam_here: float, trough_over
 	var radius := curl * BARREL_RADIUS * wave_h
 	var aspect := barrel_aspect(curl)
 	var centre_y := wave_h - radius - thick
-	var trough_z := trough_override if trough_override >= 0.0 else lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius * aspect, curl)
+	var trough_z := trough_override if trough_override >= 0.0 else lerpf(wave_h * lerpf(2.0, 1.1, shape_hollow()), radius * aspect, curl)
 	var back_len := wave_h * BACK_RUN
 	var theta_start := deg_to_rad(105.0)
 	var theta_tip := deg_to_rad(lerpf(90.0, -40.0, curl))
@@ -359,6 +426,13 @@ func crest_point(d: float) -> Vector3:
 	return Vector3(-d, p.y, p.x)
 
 
+## The crest as the mesh is built, before the live reef and swell scale it.
+func base_crest_point(d: float) -> Vector3:
+	var s := base_section_key(d, LipShape.THROWN)
+	var p := s.points[s.crest]
+	return Vector3(-d, p.y, p.x)
+
+
 ## The tip of the lip at d, a world position.
 func lip_tip_point(d: float) -> Vector3:
 	var s := section(d)
@@ -381,7 +455,7 @@ func bake_profile() -> Image:
 	for i in PROFILE_WIDTH:
 		var d := sample_distance(i)
 		var curl := curl_at(d)
-		image.set_pixel(i, 0, Color(crest_height_at(d), trough_z_at(d), curl, foam_at(d)))
+		image.set_pixel(i, 0, Color(base_crest_height_at(d), trough_z_at(d), curl, foam_at(d)))
 	return image
 
 

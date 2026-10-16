@@ -60,8 +60,56 @@ const SPRAY_ANGLE_UP := -165.0
 const SPRAY_ANGLE_DOWN := 20.0
 ## The hotkeys that play a move (MovePlayer), and how hollow the wave is made for the tube if it cannot barrel yet.
 const MOVE_KEYS := {KEY_L: "lip_hit", KEY_C: "cutback", KEY_F: "floater", KEY_T: "tube", KEY_P: "pump"}
-const TUBE_HOLLOW := 0.9
 const TAKE_OVER_MOTION := 3.0       # pixels the mouse must move to take the controls back from a move being played
+
+## The reef and the tide. The curl is baked into the mesh, so it follows the reef section at the peel point (sampled
+## REEF_SAMPLE_D ahead of it) and the tide in reshapes, whenever one of them has moved more than RESHAPE_STEP.
+const REEF_SAMPLE_D := 0.5
+const RESHAPE_STEP := 0.03
+## The test hotkeys put a section this far ahead of the rider, and the barrel hotkey a bowl this far ahead of the peel
+## point, so it is pitching by the time the move has taken him back into the pocket.
+const BARREL_NOW_AT := 6.0
+
+## The camera moves a little through the ride, for depth. Out on the shoulder (from SHOULDER_LOOK_FROM to
+## SHOULDER_LOOK_FULL meters ahead) it swings round to the right, more behind his head, so more of what is coming down the
+## line shows (and he sits a little right of centre); a racecourse or a bowl coming does the same a little. In the tube
+## it tucks in (yaw, lens and distance) so the almond mouth frames him. A slow sway keeps it alive. Degrees and meters.
+const CAMERA_YAW_SHOULDER := 10.0
+const SHOULDER_LOOK_FROM := 4.0
+const SHOULDER_LOOK_FULL := 12.0
+const SURFER_SCREEN_X_SHOULDER := 0.06
+const CAMERA_YAW_SECTION := 4.0
+const SECTION_LOOK_AHEAD := 10.0
+const CAMERA_LOOK_RATE := 1.2
+const CAMERA_YAW_TUBE := 22.0
+const CAMERA_FOV_TUBE := 19.5
+const CAMERA_DISTANCE_TUBE := 17.5
+const CAMERA_SWAY := Vector2(1.4, 0.7)
+const CAMERA_SWAY_RATES := Vector2(0.13, 0.31)
+
+## The green room. In the tube (more than TUBE_IN of it, between TUBE_D meters of the peel point and below TUBE_U up the
+## face) the camera tucks in over TUCK_TIME, and deep in it (past DILATION_DEPTH) time slows to DILATION and the sound
+## hushes. Held there SLINGSHOT_AFTER seconds, driving out toward the mouth (past SLINGSHOT_D) as the lip lands, the
+## barrel spits him out: a dense cloud past him and SLINGSHOT_BOOST m/s of speed.
+const TUBE_IN := 0.45
+const TUBE_D := Vector2(-3.5, 1.5)
+const TUBE_U := 0.5
+const TUCK_TIME := 0.4
+const DILATION_DEPTH := 0.6
+const DILATION := 0.88
+const DILATION_TIME := 0.4
+const SLINGSHOT_AFTER := 0.9
+const SLINGSHOT_D := -1.2
+const SLINGSHOT_BOOST := 1.6
+const TUBE_FORGET := 0.4            # seconds out of the tube before the time in it is forgotten
+const SPIT_ANGLE := -170.0          # degrees on screen: out of the mouth, down the line (left) and a little up
+
+## The soft wipeout: he drifts back with the foam at DRIFT_BACK of the peel speed, tumbling TUMBLE_TURNS times, sinking
+## TUMBLE_SINK meters, then sits SIT_SINK down in the water through the lull until the next swell stands him up.
+const DRIFT_BACK := 0.6
+const TUMBLE_TURNS := 1.25
+const TUMBLE_SINK := 0.9
+const SIT_SINK := 0.7
 
 var _time := 0.0
 var _travel := 0.0
@@ -90,6 +138,27 @@ var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
 var _auto_burst := false
 
+## The reef under the wave, the evening going on, and the rhythm of ride, wipeout and lull.
+var reef := SectionDirector.new()
+var solar := SolarClock.new()
+var cycle := RideCycle.new()
+var music := MusicLayers.new()
+var _overlay := TestOverlay.new()
+var _game_speed := 1.0              # the , and . keys; the tube's dilation multiplies it
+var _dilation := 1.0
+var _tuck := 0.0                    # 0 open, 1 tucked in for the tube
+var _look := 0.0                    # degrees the camera has swung round to look down the line
+var _shoulder_x := 0.0
+var _tube_time := 0.0
+var _out_of_tube := 0.0
+var _slung := false
+var _size_offset := 0.0             # the - = and [ ] keys (and set_wave) move the wave from what the tide gives
+var _hollow_offset := 0.0
+var _mood_from_clock := true        # the evening sets the look, unless a mood was asked for
+var _last_blend: Array = []
+var _sun_y := SUN_Y
+var _audio_started := false
+
 var _ridges: Array[RidgeLayer] = []
 ## Each shader material with the mood properties it declares as uniforms.
 var _mood_uniforms: Array[Dictionary] = []
@@ -103,14 +172,15 @@ var _materials: Array[ShaderMaterial] = []
 
 
 func _init() -> void:
-	# Attached now, not in _ready, so a scene that is never started cannot orphan it.
+	# Attached now, not in _ready, so a scene that is never started cannot orphan them.
 	add_child(_ride_input)
+	add_child(music)
 
 
 func _notification(what: int) -> void:
 	# The labels and the second fan are attached in _ready; a scene freed before that must free them itself.
 	if what == NOTIFICATION_PREDELETE:
-		for orphan: Node in [_key_help, _readout, _speed_label, _front_spray]:
+		for orphan: Node in [_key_help, _readout, _speed_label, _front_spray, _overlay]:
 			if is_instance_valid(orphan) and orphan.get_parent() == null:
 				orphan.free()
 
@@ -123,7 +193,16 @@ func _ready() -> void:
 	_front_spray.set_wake(0.0)
 	var url_speed := UrlParams.get_value("speed")
 	if url_speed.is_valid_float():
-		Engine.time_scale = clampf(url_speed.to_float(), GAME_SPEED_MIN, GAME_SPEED_MAX)
+		_game_speed = clampf(url_speed.to_float(), GAME_SPEED_MIN, GAME_SPEED_MAX)
+	Engine.time_scale = _game_speed
+	_stage.model.reef = reef
+	reef.enabled = UrlParams.get_value("reef") != "off"
+	var url_solar := UrlParams.get_value("solar")
+	if url_solar.is_valid_float():
+		solar.time = url_solar.to_float()
+	solar.running = UrlParams.get_value("clock") != "off"
+	_mood_from_clock = not UrlParams.has("mood")
+	_add_overlay()
 	_show_game_speed()
 	_set_surfer_3d(not UrlParams.has("sprite"))  # the real-time surfer is the default; ?sprite or the 3 key brings the sprite back
 	for child in get_children():
@@ -144,9 +223,11 @@ func _ready() -> void:
 	_panel.values_changed.connect(_on_panel_changed)
 	resized.connect(_on_resized)
 	Palette.changed.connect(_apply_mood)
+	_feed_evening()
 	_on_resized()
 	_apply_mood()
-	set_wave(_url_number("size", DEFAULT_SIZE), _url_number("hollow", DEFAULT_HOLLOW), _url_number("peel", DEFAULT_PEEL_OFFSET))
+	var tide := solar.tide()
+	set_wave(_url_number("size", tide.x), _url_number("hollow", tide.y), _url_number("peel", DEFAULT_PEEL_OFFSET))
 	var requested_pose := UrlParams.get_value("pose")
 	set_surfer_pose(requested_pose if SurferSprites.has_animation(requested_pose) else DEFAULT_POSE)
 
@@ -155,9 +236,37 @@ func _process(delta: float) -> void:
 	_time += delta
 	_ride_input.process(delta)
 	_read_held_keys(delta)
-	_moves.update(delta, rider, _ride_input)
+	var model := _stage.model
+	var lip_phase := WaveStage.lip_phase_at(rider.d, _time)
+	var lip_landing := lip_phase >= WaveStage.LIP_LANDING_PHASE and lip_phase < 0.92
+	match cycle.update(delta, rider, model, lip_landing):
+		"wipeout":
+			_on_wipeout()
+		"lull":
+			_on_lull()
+		"ride":
+			_place_rider(DEFAULT_PEEL_OFFSET)
+	model.swell = cycle.swell
+	if cycle.riding():
+		_moves.update(delta, rider, _ride_input)
+		rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), model, _tuning)
+		solar.advance(delta, rider.flow)
+	else:
+		_drift_while_down(delta)
+		_ride_input.take_height_push()
+	reef.maturity = solar.maturity()
+	reef.update(delta, model.peel_speed())
+	_follow_tide_and_reef()
+	_feed_evening()
+	_update_tube(delta)
+	music.set_flow(rider.flow if cycle.riding() else 0.0)
+	music.set_lull(not cycle.riding())
+	_spray.set_flow(rider.flow)
+	_front_spray.set_flow(rider.flow)
+	Engine.time_scale = _game_speed * _dilation
 	_show_game_speed()
-	rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), _stage.model, _tuning)
+	if _overlay.visible:
+		_overlay.set_status(_status_text())
 	if _readout.visible:
 		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f   lean %d deg   load %.1f g   stall %.1f
 charge %.1f   release %.1f   float %.1f   spray %.2f   %s" % [
@@ -167,7 +276,8 @@ charge %.1f   release %.1f   float %.1f   spray %.2f   %s" % [
 	var strength := rider.take_burst()
 	if strength > 0.0:
 		burst(strength, rider.burst_release)
-	_spray.set_wake(lerpf(0.2, 1.0, rider.speed))
+		music.splash(strength * 0.6)
+	_spray.set_wake(lerpf(0.2, 1.0, rider.speed) if cycle.riding() else 0.0)
 	_travel += TRAVEL_SPEED * lerpf(TRAVEL_SPEED_SLOW, TRAVEL_SPEED_FAST, rider.speed) * delta
 	for material in _materials:
 		material.set_shader_parameter("time", _time)
@@ -176,12 +286,20 @@ charge %.1f   release %.1f   float %.1f   spray %.2f   %s" % [
 		ridge.place(_travel, size.y, _crop)
 	_place_surfer_and_spray()
 	_wave_spray.update(_stage, _time)
-	_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.spray_power, _time)
+	if cycle.riding():
+		_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.spray_power, _time)
 	if _auto_burst:
 		_auto_burst_in -= delta
 		if _auto_burst_in <= 0.0:
 			_auto_burst_in = AUTO_BURST_EVERY
 			_throw_test_burst()
+
+
+## Browsers only let sound start after the player touches the page, so the first press anywhere starts it.
+func _input(event: InputEvent) -> void:
+	if not _audio_started and (event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch) and event.is_pressed():
+		_audio_started = true
+		music.start()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -190,11 +308,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_moves.stop()
 	if event is InputEventKey and event.pressed and not event.echo and MOVE_KEYS.has(event.keycode):
 		play_move(MOVE_KEYS[event.keycode])
+	elif event is InputEventKey and _overlay.handle_key(event):
+		pass
 	elif event is InputEventKey:
 		if event.pressed and not event.echo and event.keycode == KEY_M:
-			Palette.cycle()
+			_next_look()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
-			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
+			_size_offset = 0.0
+			_hollow_offset = 0.0
+			var tide := solar.tide()
+			set_wave(tide.x, tide.y, DEFAULT_PEEL_OFFSET)
 			_ride_input.reset()
 		elif event.pressed and not event.echo and event.keycode == KEY_O:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
@@ -212,25 +335,218 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and not event.echo and event.keycode == KEY_H:
 			_key_help.visible = not _key_help.visible
 			_readout.visible = _key_help.visible
+			_overlay.visible = _key_help.visible
 		elif event.pressed and (event.keycode == KEY_COMMA or event.keycode == KEY_PERIOD):
 			var step := GAME_SPEED_STEP if event.keycode == KEY_PERIOD else -GAME_SPEED_STEP
-			Engine.time_scale = clampf(snappedf(Engine.time_scale + step, GAME_SPEED_STEP), GAME_SPEED_MIN, GAME_SPEED_MAX)
+			_game_speed = clampf(snappedf(_game_speed + step, GAME_SPEED_STEP), GAME_SPEED_MIN, GAME_SPEED_MAX)
+			Engine.time_scale = _game_speed * _dilation
 			_show_game_speed()
-	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
+	# A double click or double tap moves the evening on (touches arrive as emulated mouse clicks).
 	elif event is InputEventMouseButton:
 		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
-			Palette.cycle()
+			_next_look()
 
 
 ## Plays a move through the controls (MovePlayer.MOVES): the hotkeys L, C, F, T and P. The tube needs a wave that
-## barrels, so if this one cannot it is made hollower first.
+## barrels, so if this one cannot a reef bowl is sent in to make it pitch.
 func play_move(move_name: String) -> void:
 	if move_name == "tube" and _stage.model.barrel() < WaveModel.BARREL_THRESHOLD + 0.1:
-		_stage.model.hollowness = maxf(_stage.model.hollowness, TUBE_HOLLOW)
-		_stage.rebuild()
-		_panel.show_values(_stage.model.size, _stage.model.hollowness, peel_offset)
+		reef.force(SectionDirector.Kind.REEF_BOWL, BARREL_NOW_AT)
+		_follow_tide_and_reef()
 	_moves.play(move_name)
 	_show_game_speed()
+
+
+## The M key and a double click: the next part of the evening (or the next mood, if one was asked for in the URL).
+func _next_look() -> void:
+	if _mood_from_clock:
+		solar.next_phase()
+	else:
+		Palette.cycle()
+
+
+## Testing: sends a reef section of `kind` in from down the line, a few seconds away.
+func send_section(kind: SectionDirector.Kind) -> void:
+	reef.force(kind, maxf(rider.d, 0.0) + SectionDirector.FORCE_AHEAD)
+
+
+## Testing: a barrel now. A bowl comes in at the peel point and the barrel crouch takes him back into the pocket.
+func barrel_now() -> void:
+	if not cycle.riding():
+		return
+	reef.force(SectionDirector.Kind.REEF_BOWL, BARREL_NOW_AT)
+	_follow_tide_and_reef()
+	_moves.play("tube")
+
+
+## Testing: a soft wipeout now.
+func wipeout_now() -> void:
+	if cycle.riding():
+		cycle.wipeout()
+		_on_wipeout()
+
+
+## Testing: a lull now.
+func lull_now() -> void:
+	if cycle.state != RideCycle.State.LULL:
+		cycle.lull()
+		_on_lull()
+
+
+## Testing: the reef's sections stop coming (or start again).
+func toggle_reef() -> void:
+	reef.enabled = not reef.enabled
+
+
+## Testing: holds the evening where it is (or lets it run on).
+func toggle_evening() -> void:
+	solar.running = not solar.running
+
+
+func toggle_sound() -> void:
+	music.set_muted(not music.is_muted())
+
+
+## Testing: jumps the evening to phase `index` (SolarClock.PHASE_NAMES), handing the look back to the clock.
+func evening_phase(index: int) -> void:
+	_mood_from_clock = true
+	_last_blend = []
+	solar.jump_to_phase(index)
+
+
+## The wave follows the tide (and the - = [ ] keys) and the reef at the peel point: the live parts of the reef go straight
+## to the shaders; the curl is rebuilt over a few frames whenever the shape has moved more than RESHAPE_STEP.
+func _follow_tide_and_reef() -> void:
+	var model := _stage.model
+	var tide := solar.tide()
+	model.peel_mult = tide.z * reef.peel_mult_at(REEF_SAMPLE_D)
+	if _stage.reshaping():
+		return
+	var wave_size := clampf(tide.x + _size_offset, 0.0, 1.0)
+	var hollowness := clampf(tide.y + _hollow_offset, 0.0, 1.0)
+	var reef_size := reef.size_delta_at(REEF_SAMPLE_D)
+	var reef_hollow := reef.hollow_delta_at(REEF_SAMPLE_D)
+	var moved := maxf(maxf(absf(wave_size - model.size), absf(hollowness - model.hollowness)),
+			maxf(absf(reef_size - model.reef_size), absf(reef_hollow - model.reef_hollow)))
+	if moved > RESHAPE_STEP:
+		model.size = wave_size
+		model.hollowness = hollowness
+		model.reef_size = reef_size
+		model.reef_hollow = reef_hollow
+		_stage.reshape()
+
+
+## The evening sets the look (blending the moods) and where the sun is.
+func _feed_evening() -> void:
+	if _mood_from_clock:
+		var blend := solar.mood_blend()
+		if _last_blend.is_empty() or blend[0] != _last_blend[0] or blend[1] != _last_blend[1] or absf(blend[2] - _last_blend[2]) > 0.003:
+			_last_blend = blend
+			Palette.blend(blend[0], blend[1], blend[2])
+	var sun_y := solar.sun_height()
+	if absf(sun_y - _sun_y) > 0.0005:
+		_sun_y = sun_y
+		_place_sun()
+
+
+## The green room: tucking the camera in, slowing time, hushing the sound, and the spit out of the barrel.
+func _update_tube(delta: float) -> void:
+	var model := _stage.model
+	var depth := model.barrel_amount_at(rider.d, rider.u) if cycle.riding() else 0.0
+	var in_tube := depth > TUBE_IN and rider.d > TUBE_D.x and rider.d < TUBE_D.y and rider.u < TUBE_U
+	_tuck = lerpf(_tuck, 1.0 if in_tube else 0.0, 1.0 - exp(-delta / TUCK_TIME))
+	if in_tube:
+		_tube_time += delta
+		_out_of_tube = 0.0
+	else:
+		_out_of_tube += delta
+		if _out_of_tube > TUBE_FORGET:
+			_tube_time = 0.0
+			_slung = false
+	var deep := in_tube and depth > DILATION_DEPTH and not _slung
+	_dilation = lerpf(_dilation, DILATION if deep else 1.0, 1.0 - exp(-delta / DILATION_TIME))
+	music.set_hush(depth if in_tube and not _slung else 0.0)
+	var phase := WaveStage.lip_phase_at(rider.d, _time)
+	if not _slung and _tube_time >= SLINGSHOT_AFTER and rider.d > SLINGSHOT_D and rider.vel_d > 0.0 and phase >= WaveStage.LIP_LANDING_PHASE:
+		spit_out()
+
+
+## The barrel spits him out onto the open face: a dense cloud past him, a shove of speed, and time and sound snap back.
+func spit_out() -> void:
+	_slung = true
+	_dilation = 1.0
+	var model := _stage.model
+	var mouth := model.surface_point(rider.d + 0.5, 0.35)
+	var at := _stage.project(mouth)
+	var pixels_per_meter := at.distance_to(_stage.project(mouth + Vector3.UP))
+	_wave_spray.blast(at, pixels_per_meter, SPIT_ANGLE)
+	rider.boost(SLINGSHOT_BOOST)
+	music.splash(0.8)
+
+
+func _on_wipeout() -> void:
+	_moves.stop()
+	_spray.splash(1.0)
+	music.splash(1.0)
+	solar.step_back()
+	rider.flow *= 0.6
+	_tube_time = 0.0
+
+
+## The lull: the sea goes glassy and he sits up in the water waiting, back in the lineup, while the reef starts afresh.
+func _on_lull() -> void:
+	_moves.stop()
+	reef.sections.clear()
+	_place_rider(DEFAULT_PEEL_OFFSET)
+	_ride_input.reset()
+
+
+## Down in the water (tumbling, or waiting in a lull) the rider is not ridden: he drifts back with the foam.
+func _drift_while_down(delta: float) -> void:
+	if cycle.state == RideCycle.State.WIPEOUT:
+		rider.d -= DRIFT_BACK * _stage.model.peel_speed() * delta
+		rider.u = lerpf(rider.u, 0.1, 1.0 - exp(-delta / 0.6))
+	rider.v = 0.0
+	rider.speed = 0.0
+	rider.omega = 0.0
+
+
+## Testing: one line on what the reef, the evening, the flow and the tube are doing.
+func _status_text() -> String:
+	var here: String = SectionDirector.NAMES[reef.kind_at(rider.d)]
+	var next := reef.next_ahead(rider.d + 0.5)
+	var coming := "%s in %d m" % [SectionDirector.NAMES[next.kind], roundi(next.d_center - next.half_width - rider.d)] if next != null and next.d_center - next.half_width > rider.d else "nothing coming"
+	var tide := solar.tide()
+	return "%s %.2f%s   tide: size %.2f, hollow %.2f, peel x%.2f\nreef here: %s, next: %s\nflow %.2f   tube %.2f   time x%.2f   %s" % [
+		solar.phase_name(), solar.time, "" if solar.running else " (held)", tide.x, tide.y, _stage.model.peel_mult,
+		here, coming, rider.flow, _tuck, _dilation, RideCycle.State.keys()[cycle.state].to_lower()]
+
+
+## The test hotkeys and their buttons down the right of the screen.
+func _add_overlay() -> void:
+	_overlay.add_group("reef sections (arrive in about 3 s)")
+	_overlay.add_action(KEY_4, "cruiser wall", send_section.bind(SectionDirector.Kind.CRUISER_WALL))
+	_overlay.add_action(KEY_5, "deep channel", send_section.bind(SectionDirector.Kind.DEEP_CHANNEL))
+	_overlay.add_action(KEY_6, "racecourse", send_section.bind(SectionDirector.Kind.RACECOURSE))
+	_overlay.add_action(KEY_7, "reef bowl", send_section.bind(SectionDirector.Kind.REEF_BOWL))
+	_overlay.add_action(KEY_8, "reef sections on / off", toggle_reef)
+	_overlay.add_group("events")
+	_overlay.add_action(KEY_G, "barrel now", barrel_now)
+	_overlay.add_action(KEY_K, "wipeout", wipeout_now)
+	_overlay.add_action(KEY_Y, "lull", lull_now)
+	_overlay.add_group("evening")
+	_overlay.add_action(KEY_Z, "high golden", evening_phase.bind(0))
+	_overlay.add_action(KEY_X, "80s sunset", evening_phase.bind(1))
+	_overlay.add_action(KEY_V, "electric dusk", evening_phase.bind(2))
+	_overlay.add_action(KEY_N, "bioluminescent night", evening_phase.bind(3))
+	_overlay.add_action(KEY_U, "hold / run the evening", toggle_evening)
+	_overlay.add_action(KEY_Q, "sound on / off", toggle_sound)
+	_overlay.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_overlay.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_overlay.offset_left = -14.0
+	_overlay.offset_right = -14.0
+	_overlay.offset_top = 36.0
+	add_child(_overlay)
 
 
 ## Whether an input event is the player taking the controls back from a move being played.
@@ -250,9 +566,15 @@ func _balance_note() -> String:
 
 ## Sets the wave's size and hollowness (both 0 to 1) and how far ahead of the peel point, in
 ## meters, the surfer is.
+## The tide keeps moving the wave through the evening; this sets how far from the tide's wave it is.
 func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
+	var tide := solar.tide()
+	_size_offset = wave_size - tide.x
+	_hollow_offset = hollowness - tide.y
 	_stage.model.size = wave_size
 	_stage.model.hollowness = hollowness
+	_stage.model.reef_size = reef.size_delta_at(REEF_SAMPLE_D)
+	_stage.model.reef_hollow = reef.hollow_delta_at(REEF_SAMPLE_D)
 	_place_rider(clampf(ahead_of_peel, DebugPanel.PEEL_MIN, DebugPanel.PEEL_MAX))
 	_stage.rebuild()
 	_first_frame = true
@@ -297,7 +619,7 @@ func _spray_angle(from: Vector3) -> float:
 
 ## Shows the game speed in the corner and in the key list.
 func _show_game_speed() -> void:
-	_speed_label.text = "game speed %.1fx" % Engine.time_scale + ("   playing: " + MovePlayer.LABELS[_moves.move] if _moves.playing() else "")
+	_speed_label.text = "game speed %.1fx" % _game_speed + ("   playing: " + MovePlayer.LABELS[_moves.move] if _moves.playing() else "")
 	_key_help.text = _key_help_text()
 
 
@@ -317,16 +639,28 @@ func set_surfer_pose(pose_name: String) -> void:
 func _place_surfer_and_spray() -> void:
 	var model := _stage.model
 	var feet := model.surface_point(rider.d, rider.u)
-	_focus = feet if _first_frame else _focus.lerp(feet, 1.0 - exp(-CAMERA_FOLLOW_RATE * get_process_delta_time()))
+	var delta := get_process_delta_time()
+	# (down in the water the camera lets him go gently, and the wave rolls on away from it)
+	var follow_rate := CAMERA_FOLLOW_RATE * (1.0 if cycle.riding() else 0.4)
+	_focus = feet if _first_frame else _focus.lerp(feet, 1.0 - exp(-follow_rate * delta))
 	var target_swing := model.barrel()
-	_swing = target_swing if _first_frame else lerpf(_swing, target_swing, 1.0 - exp(-CAMERA_SWING_RATE * get_process_delta_time()))
+	_swing = target_swing if _first_frame else lerpf(_swing, target_swing, 1.0 - exp(-CAMERA_SWING_RATE * delta))
+	var shoulder := smoothstep(SHOULDER_LOOK_FROM, SHOULDER_LOOK_FULL, rider.d)
+	var coming := maxf(reef.weight_of(SectionDirector.Kind.RACECOURSE, rider.d + SECTION_LOOK_AHEAD), reef.weight_of(SectionDirector.Kind.REEF_BOWL, rider.d + SECTION_LOOK_AHEAD))
+	var look := CAMERA_YAW_SHOULDER * shoulder + CAMERA_YAW_SECTION * coming
+	_look = look if _first_frame else lerpf(_look, look, 1.0 - exp(-CAMERA_LOOK_RATE * delta))
+	_shoulder_x = lerpf(_shoulder_x, SURFER_SCREEN_X_SHOULDER * shoulder, 1.0 - exp(-CAMERA_LOOK_RATE * delta))
 	_first_frame = false
-	_stage.frame(_focus, lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing), lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing))
+	var sway := CAMERA_SWAY.x * sin(_time * CAMERA_SWAY_RATES.x * TAU) + CAMERA_SWAY.y * sin(_time * CAMERA_SWAY_RATES.y * TAU + 1.3)
+	var yaw := lerpf(lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing) + _look + sway, CAMERA_YAW_TUBE, _tuck)
+	var screen_x := lerpf(lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing) + _shoulder_x, SURFER_SCREEN_X_BARREL, _tuck)
+	_stage.frame(_focus, yaw, screen_x, lerpf(WaveStage.CAMERA_FOV, CAMERA_FOV_TUBE, _tuck), lerpf(WaveStage.CAMERA_DISTANCE, CAMERA_DISTANCE_TUBE, _tuck))
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
 	if _surfer3d:
 		_surfer3d.follow(rider, model, get_process_delta_time())
+		_sink_surfer()
 		_spray.set_hand_drag(_stage.project(_surfer3d.hand_spray_point), _surfer3d.hand_spray)
 		_spray.set_rail(rider.rail_spray, _spray_angle(_surfer3d.tail_point()))
 	else:
@@ -353,9 +687,21 @@ func _read_held_keys(delta: float) -> void:
 	var size_change := (float(Input.is_key_pressed(KEY_EQUAL)) - float(Input.is_key_pressed(KEY_MINUS))) * SIZE_RATE * delta
 	var hollow_change := (float(Input.is_key_pressed(KEY_BRACKETRIGHT)) - float(Input.is_key_pressed(KEY_BRACKETLEFT))) * HOLLOW_RATE * delta
 	if size_change != 0.0 or hollow_change != 0.0:
-		var keep_camera := _first_frame
-		set_wave(_stage.model.size + size_change, _stage.model.hollowness + hollow_change, rider.d)
-		_first_frame = keep_camera
+		_size_offset = clampf(_size_offset + size_change, -1.0, 1.0)
+		_hollow_offset = clampf(_hollow_offset + hollow_change, -1.0, 1.0)
+		var tide := solar.tide()
+		_panel.show_values(clampf(tide.x + _size_offset, 0.0, 1.0), clampf(tide.y + _hollow_offset, 0.0, 1.0), peel_offset)
+
+
+## Down in the water: tumbling under the foam after a wipeout, then sitting low on the board through the lull.
+func _sink_surfer() -> void:
+	if cycle.riding():
+		return
+	var tumble := cycle.tumble()
+	var sink := SIT_SINK * cycle.sunk() + TUMBLE_SINK * sin(PI * tumble)
+	var spin := Basis(Vector3.RIGHT, TAU * TUMBLE_TURNS * smoothstep(0.0, 1.0, tumble))
+	_surfer3d.transform = Transform3D(spin * _surfer3d.transform.basis, _surfer3d.transform.origin + Vector3.DOWN * sink)
+	_surfer3d.set_target("crouch", cycle.sunk())
 
 
 ## A faint key list in the lower left for testing. H hides it.
@@ -396,8 +742,8 @@ func _key_help_text() -> String:
 	return "\n".join([
 		"1   bottom turn (3D: toggle)", "2   crouch (3D only, toggle)", "3   3D surfer on / off",
 		"L  hit the lip   C  cutback (hold down)   F  floater", "T  barrel crouch   P  pump   (any control takes over)",
-		"O   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow",
-		", .   game speed (%.1fx)" % Engine.time_scale, "H   hide this"])
+		"O   next animation", "B   spray burst", "M   next part of the evening", "R   reset", "- =   wave size", "[ ]   hollow",
+		", .   game speed (%.1fx)" % _game_speed, "H   hide this (and the test buttons)"])
 
 
 ## Swaps the sprite surfer for the real-time one that lives inside the wave's 3D stage (or back).
@@ -415,10 +761,7 @@ func _set_surfer_3d(on: bool) -> void:
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
-	_stage.model.size = wave_size
-	_stage.model.hollowness = hollowness
-	_place_rider(ahead_of_peel)
-	_stage.rebuild()
+	set_wave(wave_size, hollowness, ahead_of_peel)
 
 
 func _register(material: ShaderMaterial) -> void:
@@ -437,11 +780,20 @@ func _on_resized() -> void:
 	var aspect := size.x / size.y
 	var layout_aspect := maxf(aspect, MIN_LAYOUT_ASPECT)
 	_crop = (layout_aspect - aspect) * 0.5
-	var sun_pos := Vector2(layout_aspect * SUN_X_FRACTION, SUN_Y)
 	for material in _materials:
 		material.set_shader_parameter("aspect", aspect)
 		material.set_shader_parameter("layout_aspect", layout_aspect)
 		material.set_shader_parameter("horizon", HORIZON)
+	_place_sun()
+
+
+## The sun sinks through the evening (SolarClock.sun_height); the sky, the glow and the sea's glitter follow it.
+func _place_sun() -> void:
+	if size.y <= 0.0:
+		return
+	var layout_aspect := maxf(size.x / size.y, MIN_LAYOUT_ASPECT)
+	var sun_pos := Vector2(layout_aspect * SUN_X_FRACTION, _sun_y)
+	for material in _materials:
 		material.set_shader_parameter("sun_pos", sun_pos)
 
 

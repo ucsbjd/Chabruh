@@ -26,12 +26,17 @@ func _initialize() -> void:
 	_test_carve_trail()
 	_test_spray()
 	_test_riding()
+	_test_reef()
+	_test_evening()
+	_test_flow_and_cycle()
+	MusicChecks.run(_check, self)
 	await _test_calibration()
 	_test_surfer_sprites()
 	_test_surfer()
 	_test_surfer_3d()
 	_test_tuning()
 	await _test_world()
+	await _test_world_events()
 	print("%s: %d failed" % ["FAIL" if _failures > 0 else "PASS", _failures])
 	quit(_failures)
 
@@ -351,7 +356,8 @@ func _test_spray() -> void:
 	gentle.free()
 	spray.free()
 	var wave_spray := WaveSpray.new()
-	_check(wave_spray.particle_budget() < 400, "the lip spit stays small (%d)" % wave_spray.particle_budget())
+	# (the lips along the break, plus the barrel spitting the rider out, which comes once a barrel)
+	_check(wave_spray.particle_budget() < 500, "the lip spit stays small (%d)" % wave_spray.particle_budget())
 	wave_spray.free()
 
 
@@ -1014,6 +1020,167 @@ func _test_world() -> void:
 	_check(back_layer_before_surfer, "the heavy part of the spray is drawn behind the surfer")
 	world.free()
 	await process_frame
+
+
+## The reef sections travel toward the break, change the wave live where they are, and come more often as bowls late on.
+func _test_reef() -> void:
+	var reef := SectionDirector.new(7)
+	for i in 120:
+		reef.update(1.0 / 60.0, 8.0)
+	_check(reef.sections.size() >= 1 and reef.sections[0].d_center < SectionDirector.SPAWN_D, "reef sections spawn down the line and travel toward the break")
+	var before := reef.sections[0].d_center
+	reef.update(0.5, 8.0)
+	_check(is_equal_approx(reef.sections[0].d_center, before - 4.0), "a section moves at the peel speed")
+	for i in 600:
+		reef.update(1.0 / 30.0, 8.0)
+	_check(reef.sections.size() <= SectionDirector.MAX_ACTIVE, "never more than two sections at once")
+	var early := SectionDirector.new(3)
+	var late := SectionDirector.new(3)
+	late.maturity = 1.0
+	var bowls_early := 0
+	var bowls_late := 0
+	for i in 400:
+		bowls_early += int(early.pick_kind() == SectionDirector.Kind.REEF_BOWL)
+		bowls_late += int(late.pick_kind() == SectionDirector.Kind.REEF_BOWL)
+	_check(bowls_early > 60 and bowls_early < 140 and bowls_late > 170, "bowls come about a quarter of the time early and over half late (%d, %d of 400)" % [bowls_early, bowls_late])
+
+	var model := WaveModel.new()
+	model.size = 0.5
+	model.hollowness = 0.42
+	var plain_height := model.crest_height_at(4.0)
+	var plain_trough := model.section(4.0).face_point(0.0).x
+	var plain_power := model.power_at(4.0)
+	model.reef = SectionDirector.new(1)
+	model.reef.force(SectionDirector.Kind.REEF_BOWL, 4.0)
+	_check(model.crest_height_at(4.0) > plain_height * 1.15, "over a reef bowl the wave stands taller, live")
+	_check(model.section(4.0).face_point(0.0).x < plain_trough * model.scale_at(4.0) * 0.85, "over a bowl the trough drains in toward the wave")
+	var base := model.base_section_key(4.0, WaveModel.LipShape.THROWN)
+	_check(is_equal_approx(model.section(4.0).points[base.crest].y, base.points[base.crest].y * model.scale_at(4.0)), "the live section is the built one scaled by the reef, as the shader does it")
+	var uniform := model.reef.uniform_for(0, model.height(), WaveModel.MIN_HEIGHT, WaveModel.MAX_HEIGHT)
+	_check(is_equal_approx(1.0 + uniform.z, model.scale_at(4.0)) and is_equal_approx(uniform.w, float(SectionDirector.Kind.REEF_BOWL)), "the shader gets the same height gain and the kind")
+	model.reef.force(SectionDirector.Kind.DEEP_CHANNEL, 4.0)
+	_check(model.power_at(4.0) < plain_power and model.crest_height_at(4.0) < plain_height, "a deep channel is smaller and pushes less")
+	model.reef.force(SectionDirector.Kind.RACECOURSE, 0.0)
+	_check(model.reef.peel_mult_at(0.0) > 1.3, "a racecourse peels faster")
+	model.reef = null
+	model.swell = 0.15
+	_check(model.crest_height_at(4.0) < plain_height * 0.2, "in a lull the swell lays the wave down")
+	var shader := (load("res://shaders/wave3d.gdshader") as Shader).code
+	_check(("SUCK_OUT = %.2f" % WaveModel.SUCK_OUT) in shader and ("SUCK_TOP = %.2f" % WaveModel.SUCK_TOP) in shader, "the wave shader drains the trough with the model's numbers")
+
+
+## The evening runs on while he rides, faster in flow, and the tide drops with it.
+func _test_evening() -> void:
+	var clock := SolarClock.new()
+	_check(clock.phase_name() == "High Golden" and clock.mood_blend()[0] == "golden", "the evening starts in the golden hour")
+	for i in 45 * 10:
+		clock.advance(0.1, 0.0)
+	_check(absf(clock.time - 1.0) < 0.01 and clock.phase() == 1, "45 s of riding is one phase of the evening")
+	var flowing := SolarClock.new()
+	for i in 100:
+		flowing.advance(0.1, 1.0)
+	_check(flowing.time > 10.0 / 45.0 * 1.4, "the evening runs faster while the ride flows")
+	_check(clock.tide().x > SolarClock.new().tide().x and clock.sun_height() > SolarClock.new().sun_height(), "the tide drops (bigger waves) and the sun sinks as it gets late")
+	clock.step_back()
+	_check(is_equal_approx(clock.time, 1.0 - SolarClock.WIPEOUT_STEP_BACK), "a wipeout only steps the evening back a notch")
+	clock.jump_to_phase(3)
+	_check(clock.phase_name() == "Bioluminescent Night" and clock.tide().y > 0.8, "night is the hollow, draining reef")
+	clock.time = 2.9
+	_check(clock.mood_blend()[1] == "bioluminescent" and clock.sun_height() > 0.7, "at night the look is bioluminescent and the sun is gone")
+	var palette := root.get_node("Palette")
+	palette.blend("golden", "sunset", 0.5)
+	var golden := PaletteScript.build("golden")
+	var sunset := PaletteScript.build("sunset")
+	_check(palette.current.sky_top.is_equal_approx(golden.sky_top.lerp(sunset.sky_top, 0.5)), "the palette blends two moods continuously")
+	palette.select(PaletteScript.DEFAULT_MOOD, true)
+
+
+## Flow grows with good surfing and fades without it; the ride cycle turns a wipeout into a lull and a new wave.
+func _test_flow_and_cycle() -> void:
+	var model := WaveModel.new()
+	var tuning := TuningData.new()
+	var idle := Rider.new()
+	idle.place(3.0, 0.5)
+	for i in 300:
+		idle.step(1.0 / 60.0, Rider.steer_for(3.0), 0.0, model, tuning)
+	_check(idle.flow < Rider.FLOW_START, "flow fades slowly when nothing is happening")
+	var carver := Rider.new()
+	carver.place(3.0, 0.5)
+	for i in 600:
+		carver.step(1.0 / 60.0, Rider.steer_for(3.0), 0.03 * sin(i * 0.08), model, tuning)
+		carver.take_burst()
+	_check(carver.flow > idle.flow, "carving up and down the face builds flow (%.2f against %.2f)" % [carver.flow, idle.flow])
+	var boosted := Rider.new()
+	boosted.place(3.0, 0.5)
+	boosted.step(1.0 / 60.0, Rider.steer_for(3.0), 0.0, model, tuning)
+	var v0 := boosted.v
+	boosted.boost(1.6)
+	boosted.step(1.0 / 60.0, Rider.steer_for(3.0), 0.0, model, tuning)
+	_check(boosted.v > v0 + 1.2, "the barrel's slingshot shoves him on")
+
+	var cycle := RideCycle.new()
+	var rider := Rider.new()
+	rider.place(-2.8, 0.3)
+	model.hollowness = 0.2
+	var event := ""
+	for i in 90:
+		var e := cycle.update(1.0 / 60.0, rider, model, false)
+		event = e if e != "" else event
+	_check(event == "wipeout" and cycle.state == RideCycle.State.WIPEOUT, "caught in the foam behind the curl, he wipes out softly")
+	var events: Array[String] = []
+	var lowest := 1.0
+	for i in 60 * 9:
+		var e := cycle.update(1.0 / 60.0, rider, model, false)
+		lowest = minf(lowest, cycle.swell)
+		if e != "":
+			events.append(e)
+		if e == "ride":
+			break
+	_check(events == ["lull", "rise", "ride"] and cycle.riding(), "a wipeout drifts into a lull, the next swell rises, and he rides again (%s)" % [events])
+	_check(lowest < 0.25 and is_equal_approx(cycle.swell, 1.0), "in the lull the sea goes glassy, then the wave stands back up")
+
+
+## The test hotkeys trigger each event and stage, and the overlay shows them.
+func _test_world_events() -> void:
+	var world: Control = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	root.add_child(world)
+	await process_frame
+	await process_frame
+	var overlay: TestOverlay = world._overlay
+	var all_keys := true
+	for keycode: Key in [KEY_4, KEY_5, KEY_6, KEY_7, KEY_G, KEY_K, KEY_Y, KEY_Z, KEY_X, KEY_V, KEY_N, KEY_U]:
+		all_keys = all_keys and overlay.has_key(keycode)
+	_check(all_keys and overlay.visible, "the test overlay has a hotkey for every section, event and part of the evening")
+	world._unhandled_input(_key(KEY_7))
+	_check(world.reef.sections.size() == 1 and world.reef.sections[0].kind == SectionDirector.Kind.REEF_BOWL and world.reef.sections[0].d_center > world.rider.d, "7 sends a reef bowl in from down the line")
+	world._unhandled_input(_key(KEY_N))
+	await process_frame
+	_check(world.solar.phase() == 3 and root.get_node("Palette").mood_name == "dusk", "N jumps to the bioluminescent night")
+	world._unhandled_input(_key(KEY_Z))
+	await process_frame
+	_check(world.solar.phase() == 0 and root.get_node("Palette").mood_name == "golden", "Z jumps back to the golden hour")
+	world._unhandled_input(_key(KEY_G))
+	for i in 30:
+		await process_frame
+	var stage: WaveStage = world.get_node("WaveStage")
+	_check(stage.model.reef_hollow > 0.2 and stage.model.barrel() > WaveModel.BARREL_THRESHOLD, "G brings a bowl in and the wave reshapes into a barrel (%.2f)" % stage.model.barrel())
+	world._unhandled_input(_key(KEY_K))
+	_check(world.cycle.state == RideCycle.State.WIPEOUT, "K wipes him out softly")
+	world._unhandled_input(_key(KEY_Y))
+	await process_frame
+	_check(world.cycle.state == RideCycle.State.LULL and stage.model.swell < 1.0, "Y brings a lull")
+	_check(overlay.status().contains("lull") and overlay.status().contains("High Golden"), "the overlay says what the evening and the ride are doing")
+	world._unhandled_input(_key(KEY_H))
+	_check(not overlay.visible, "H hides the test overlay with the key list")
+	world.free()
+	await process_frame
+
+
+func _key(keycode: Key) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.keycode = keycode
+	event.pressed = true
+	return event
 
 
 func _test_tuning() -> void:

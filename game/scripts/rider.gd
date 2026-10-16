@@ -231,6 +231,28 @@ const STALL_STEER := 0.25            # how far behind the pocket the steering ha
 const STRAIN_LAG := 0.7              # radians
 const STRAIN_RATE := 4.0             # radians per second
 const STRAIN_LOAD := 3.0             # g
+## Flow (0 to 1): how well the ride is going, felt and never shown. It grows carving cleanly on the rail (a carve past
+## FLOW_LEAN with strain under FLOW_CALM), pumping in rhythm, in the tube (deeper than FLOW_TUBE_DEPTH) and with each big
+## turn off the top (a burst stronger than FLOW_SNAP_POWER); it fades slowly by itself, faster when the input is jerky
+## (strain over FLOW_STRAIN_FROM) and when he bogs down on the flat shoulder (calmer than FLOW_BOG_CALM and slower than
+## FLOW_BOG_SPEED). Rates are a second; FLOW_SNAP is a step.
+const FLOW_START := 0.25
+const FLOW_LEAN := 0.35
+const FLOW_CALM := 0.5
+const FLOW_CARVE := 0.08
+const FLOW_PUMP_FROM := 0.3
+const FLOW_PUMP := 0.10
+const FLOW_SNAP_POWER := 0.45
+const FLOW_SNAP := 0.14
+const FLOW_TUBE_DEPTH := 0.5
+const FLOW_TUBE := 0.22
+const FLOW_DECAY := 0.03
+const FLOW_STRAIN_FROM := 0.85
+const FLOW_STRAIN_LOSS := 0.18
+const FLOW_BOG_CALM := 0.82
+const FLOW_BOG_SPEED := 2.5
+const FLOW_BOG_LOSS := 0.12
+const SURGE_FADE := 1.2              # seconds for a boost past his top speed to fade
 
 var d := 3.0
 var u := 0.5
@@ -262,6 +284,7 @@ var charge := 0.0                    # 0 to 1: the bottom turn's press, stored t
 var release := 0.0                   # 0 to 1: stopping at the top, his speed going into the spray
 var afloat := 0.0                    # 0 to 1: floating down with the wave after a release
 var spray_dir := Vector3(0.6, 0.6, 0.0)  # world direction the spray leaves the tail
+var flow := FLOW_START               # 0 to 1: how well the ride is flowing (see FLOW_START)
 ## The centre of mass. `lean` is across the board from the face's normal (positive toward the wave, the toe side, which
 ## turns the nose up the face; negative toward the beach, the heel side); `carve` is the part of it that turns him (the
 ## rest just holds his line on the slope); `pitch` is over the front (positive) or back foot.
@@ -314,6 +337,8 @@ var _lean_asked_rate := 0.0
 var _last_point := Vector3.ZERO
 var _last_normal := Vector3.UP
 var _straining := false
+var _v_cap := 20.0                    # his top speed at the last step, m/s
+var _surge := 0.0                    # m/s a boost lets him go past that, fading
 
 
 static func d_for(steer: float) -> float:
@@ -337,6 +362,7 @@ func place(meters_ahead: float, face_height: float) -> void:
 	d = meters_ahead
 	u = face_height
 	vel_d = 0.0
+	_surge = 0.0
 	vel_u = 0.0
 	omega = 0.0
 	compression_vel = 0.0
@@ -623,7 +649,9 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	a_drive *= 1.0 - afloat
 	# (stopped at the top, and floating down after it, he can be slower than he ever is riding)
 	var floor_v := lerpf(v_min, v_stall, maxf(release, afloat))
-	v = clampf(v + (a_slope + a_drag + a_pump + a_drive + a_launch + a_release + a_float) * delta, floor_v, v_max)
+	# (a slingshot out of the barrel can carry him past his usual top speed, fading over SURGE_FADE)
+	_surge *= exp(-delta / SURGE_FADE)
+	v = clampf(v + (a_slope + a_drag + a_pump + a_drive + a_launch + a_release + a_float) * delta, floor_v, v_max + _surge)
 	speed = clampf(remap(v, v_min, v_max, 0.0, 1.0), 0.0, 1.0)
 
 	# Move along the wave: ahead of the peel point while faster than the curl, up the face by the heading's rise. Closing
@@ -688,6 +716,32 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	rebounding = _rebounding
 	_update_spray(delta, tuning, peel)
 	_update_move(model, peel)
+	_update_flow(delta, model)
+	_v_cap = v_max
+
+
+## The ride's flow: see FLOW_START.
+func _update_flow(delta: float, model: WaveModel) -> void:
+	var rate := -FLOW_DECAY
+	# (carve is the lean into the turn, on top of the lean that only holds his line on the slope)
+	if absf(carve) > FLOW_LEAN and strain < FLOW_CALM:
+		rate += FLOW_CARVE
+	if maxf(pumping, _pump_amount / PUMP_HEADING) > FLOW_PUMP_FROM:
+		rate += FLOW_PUMP
+	if model.barrel_amount_at(d, u) > FLOW_TUBE_DEPTH:
+		rate += FLOW_TUBE
+	if strain > FLOW_STRAIN_FROM:
+		rate -= FLOW_STRAIN_LOSS
+	if model.calm_at(d) > FLOW_BOG_CALM and v < FLOW_BOG_SPEED:
+		rate -= FLOW_BOG_LOSS
+	flow = clampf(flow + rate * delta, 0.0, 1.0)
+
+
+## A shove along the board, in m/s: the barrel spitting him out onto the open face. It can take him past his usual top
+## speed for a moment; the water's drag brings him back.
+func boost(meters_per_second: float) -> void:
+	_surge = maxf(_surge, v + meters_per_second - _v_cap)
+	v += meters_per_second
 
 
 ## The hips. He sinks with speed, in the tube and as he points down the face (getting ready to load the bottom turn), and
@@ -817,6 +871,8 @@ func _update_cutback(push: float, delta: float) -> void:
 ## to how much of it came from stopping at the top (the giant fan).
 func take_burst() -> float:
 	var strength := _pending_burst
+	if strength > FLOW_SNAP_POWER:
+		flow = minf(flow + FLOW_SNAP, 1.0)
 	burst_release = _pending_release
 	_pending_burst = 0.0
 	_pending_release = 0.0

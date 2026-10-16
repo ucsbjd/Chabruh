@@ -59,6 +59,12 @@ const RAIL_SPREAD := 16.0
 const RAIL_FROM := 0.08              # below this strength the rail throws nothing
 ## Pixels per meter the textures were drawn for; particle scales are relative to this.
 const REFERENCE_PIXELS_PER_METER := 104.0
+## The ride's flow (Rider.flow) makes every fan fuller and faster, from FLOW_LOW to FLOW_HIGH times, and from
+## RIM_FROM to RIM_FULL the fine droplets at the fan's edge catch the mood's spray_rim highlight.
+const FLOW_LOW := 0.85
+const FLOW_HIGH := 1.3
+const RIM_FROM := 0.75
+const RIM_FULL := 0.95
 
 var _pixels_per_meter := REFERENCE_PIXELS_PER_METER
 var _next := 0
@@ -74,6 +80,10 @@ var _droplet := SprayTextures.droplet()
 var _blob := SprayTextures.blob()
 var _sheet := SprayTextures.sheet()
 var _gradient := Gradient.new()
+var _edge_gradient := Gradient.new()
+var _flow := 0.0
+var _rim := 0.0
+var _mood: MoodData
 var _fall_off := Curve.new()
 
 
@@ -82,10 +92,12 @@ func _init() -> void:
 	_fall_off.add_point(Vector2(0.0, 1.0))
 	_fall_off.add_point(Vector2(1.0, 0.35))
 	_gradient.add_point(0.55, Color.WHITE)
+	_edge_gradient.add_point(0.55, Color.WHITE)
 	for i in POOL:
 		_fans.append(_make_emitter(_back, _droplet))
 		_cores.append(_make_emitter(_back, _blob))
 		_edges.append(_make_emitter(self, _droplet))
+		_edges[-1].color_ramp = _edge_gradient
 	_splash = _make_emitter(self, _droplet)
 	_wake = _make_emitter(_back, _sheet)
 	_setup_wake()
@@ -121,7 +133,9 @@ func burst(strength: float, centre_degrees := FAN_CENTRE, giant := 0.0) -> void:
 	var half_width := lerpf(FAN_HALF_WIDTH_GENTLE, FAN_HALF_WIDTH_FULL, pow(s, 0.7)) * (1.0 + GIANT_WIDTH * big)
 	var speeds := FAN_SPEED_GENTLE.lerp(FAN_SPEED_FULL, s) * (1.0 + GIANT_SPEED * big)
 	var life := lerpf(FAN_LIFETIME_GENTLE, FAN_LIFETIME_FULL, s) * (1.0 + GIANT_LIFE * big)
-	var more := 1.0 + GIANT_AMOUNT * big
+	var lively := lerpf(FLOW_LOW, FLOW_HIGH, _flow)
+	speeds *= lively
+	var more := (1.0 + GIANT_AMOUNT * big) * lively
 	var index := _next % POOL
 	_next += 1
 	var size_scale := DROPLET_SCALE * _pixels_per_meter / REFERENCE_PIXELS_PER_METER
@@ -198,9 +212,28 @@ func follow(tail: Vector2, pixels_per_meter: float, drift: float) -> void:
 
 ## Tints the spray from the mood: cream and peach where the sun lands, violet as the droplets fall into shade.
 func apply_mood(mood: MoodData) -> void:
+	_mood = mood
 	_gradient.set_color(0, mood.foam_lit.lerp(mood.sun_glint, 0.35))
 	_gradient.set_color(1, mood.foam_lit)
 	_gradient.set_color(2, Color(mood.foam_shade, 0.0))
+	_tint_edges()
+
+
+## How well the ride is flowing, 0 to 1 (Rider.flow): fuller, faster fans, and a bright rim on them when it is high.
+func set_flow(amount: float) -> void:
+	_flow = clampf(amount, 0.0, 1.0)
+	var rim := smoothstep(RIM_FROM, RIM_FULL, _flow)
+	if absf(rim - _rim) > 0.02 or (rim != _rim and (rim == 0.0 or rim == 1.0)):
+		_rim = rim
+		_tint_edges()
+
+
+func _tint_edges() -> void:
+	if _mood == null:
+		return
+	_edge_gradient.set_color(0, _mood.foam_lit.lerp(_mood.sun_glint, 0.35).lerp(_mood.spray_rim, _rim))
+	_edge_gradient.set_color(1, _mood.foam_lit.lerp(_mood.spray_rim, _rim * 0.7))
+	_edge_gradient.set_color(2, Color(_mood.foam_shade.lerp(_mood.spray_rim, _rim * 0.4), 0.0))
 
 
 ## The most droplets the spray can have alive at once, counting every pooled emitter at full strength.

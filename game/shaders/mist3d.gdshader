@@ -14,12 +14,41 @@ uniform vec4 foam_lit : source_color;
 uniform vec4 foam_shade : source_color;
 uniform vec4 sun_glint : source_color;
 
+// The reef (SectionDirector): two sections as (centre d, half width, height gain, kind), where kind is 0 wall,
+// 1 channel, 2 racecourse, 3 bowl; and the swell, the whole wave's height as a factor (near 0 in a lull).
+// WaveModel.section_key does the same sums for the rider, so keep them together.
+uniform vec4 reef_a = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform vec4 reef_b = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform float swell = 1.0;
+
+float reef_weight(vec4 r, float d) {
+	return 1.0 - smoothstep(0.0, 1.0, abs(d - r.x) / r.y);
+}
+
+// How much of the wave's height the reef and the swell give it at d.
+float reef_scale(float d) {
+	return swell * (1.0 + reef_weight(reef_a, d) * reef_a.z + reef_weight(reef_b, d) * reef_b.z);
+}
+
+// How much bowl (kind 3) or of the kinds from `kind` up (2: racecourse and bowl) there is at d, 0 to 1.
+float reef_kind(float d, float kind) {
+	return min(reef_weight(reef_a, d) * step(kind - 0.5, reef_a.w) + reef_weight(reef_b, d) * step(kind - 0.5, reef_b.w), 1.0);
+}
+
+// Feathering: a crest down the line that is about to pitch (a racecourse or a bowl coming) blows more spray, and taller.
+const float FEATHER = 0.8;
+const float FEATHER_RISE = 0.9;     // meters the curtain stands taller
+
 varying vec3 wpos;
 varying float amount;
 
 void vertex() {
+	float d = -VERTEX.x;
+	float feather = reef_kind(d, 2.0) * smoothstep(4.0, 8.0, d);
+	VERTEX.yz *= reef_scale(d);
+	VERTEX.y += UV.y * feather * FEATHER_RISE * swell;
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	amount = COLOR.r;
+	amount = clamp(COLOR.r * (1.0 + FEATHER * feather) + 0.12 * feather, 0.0, 1.0) * smoothstep(0.05, 0.5, swell);
 }
 
 float hash21(vec2 p) {

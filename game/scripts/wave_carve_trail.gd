@@ -213,7 +213,7 @@ func _point(d: float, u: float, lift: float, fall: float) -> Vector3:
 	var b := _shapes[i + 1]
 	var lip_a := _scalars[i][ROWS * 2]
 	var lip_b := _scalars[i + 1][ROWS * 2]
-	var p := _morphed(a, k, f, lift * lip_a, fall * lip_a).lerp(_morphed(b, k, f, lift * lip_b, fall * lip_b), t)
+	var p := _morphed(a, k, f, lift * lip_a, fall * lip_a).lerp(_morphed(b, k, f, lift * lip_b, fall * lip_b), t) * _model.scale_at(d)
 	var normal := a[ROWS * 3 + k].lerp(a[ROWS * 3 + k + 1], f).lerp(b[ROWS * 3 + k].lerp(b[ROWS * 3 + k + 1], f), t)
 	p += normal.normalized() * LIFT_OFF
 	return Vector3(-d, p.y, p.x)
@@ -254,11 +254,12 @@ func _station(d: float) -> int:
 func _fill(i: int) -> void:
 	var d := _stations[i]
 	var lip := _model.throw_at(d)
-	var thrown := _model.section_key(d, WaveModel.LipShape.THROWN)
+	# The face as the mesh is built: the reef and the swell scale it live in _point, as the wave shader does.
+	var thrown := _model.base_section_key(d, WaveModel.LipShape.THROWN)
 	# Where there is no lip the shader does not morph, so the other two shapes are the thrown one.
-	var lifted := _model.section_key(d, WaveModel.LipShape.LIFTED) if lip > 0.0 else thrown
-	var landed := _model.section_key(d, WaveModel.LipShape.LANDED) if lip > 0.0 else thrown
-	var face_height := maxf(1.2, _model.crest_height_at(d))
+	var lifted := _model.base_section_key(d, WaveModel.LipShape.LIFTED) if lip > 0.0 else thrown
+	var landed := _model.base_section_key(d, WaveModel.LipShape.LANDED) if lip > 0.0 else thrown
+	var face_height := maxf(1.2, _model.base_crest_height_at(d))
 	var shape := PackedVector2Array()
 	shape.resize(ROWS * 4)
 	var scalars := PackedFloat32Array()

@@ -23,6 +23,8 @@ const LIP_PERIOD := 5.5
 const LIP_SPACING := 15.0
 ## How far into the cycle the lip has fallen and landed, where the spit happens.
 const LIP_LANDING_PHASE := 0.68
+## A reshape (the wave following the reef or the tide) is built over several frames, this many microseconds a frame.
+const RESHAPE_BUDGET_USEC := 2500
 
 ## The model that shapes this wave. Change its size and hollowness, then call rebuild().
 var model := WaveModel.new()
@@ -43,6 +45,8 @@ var _profile: ImageTexture
 var _cells: ImageTexture
 var _warp: ImageTexture
 var _scroll := 0.0
+var _mesh_job: WaveMeshBuilder
+var _mist_job: WaveMistBuilder
 
 
 func _init() -> void:
@@ -105,6 +109,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_scroll += SEA_SCROLL_SPEED * delta
 	_water_material.set_shader_parameter("scroll", _scroll)
+	_advance_reshape()
+	feed_reef()
 
 
 func _exit_tree() -> void:
@@ -127,10 +133,55 @@ func materials() -> Array[ShaderMaterial]:
 
 ## Rebuilds the mesh and profile after the model's size or hollowness changed.
 func rebuild() -> void:
+	_mesh_job = null
+	_mist_job = null
 	_wave_mesh.mesh = WaveMesh.build(model)
 	_mist_mesh.mesh = WaveMist.build(model)
 	_profile.update(model.bake_profile())
 	carve_trail.rebuild(model)
+
+
+## Starts building the wave again for the model's current shape dials, a little each frame (so it never hitches);
+## the new mesh replaces the old one when it is done. Leave the model's size and hollowness alone until reshaping()
+## is false.
+func reshape() -> void:
+	_mesh_job = WaveMeshBuilder.new(model)
+	_mist_job = WaveMistBuilder.new(model)
+
+
+## Whether a reshape is still being built.
+func reshaping() -> bool:
+	return _mesh_job != null
+
+
+func _advance_reshape() -> void:
+	if _mesh_job == null:
+		return
+	var start := Time.get_ticks_usec()
+	if not _mesh_job.step(RESHAPE_BUDGET_USEC):
+		return
+	if not _mist_job.step(RESHAPE_BUDGET_USEC - (Time.get_ticks_usec() - start)):
+		return
+	_wave_mesh.mesh = _mesh_job.mesh
+	_mist_mesh.mesh = _mist_job.mesh
+	_mesh_job = null
+	_mist_job = null
+	_profile.update(model.bake_profile())
+	carve_trail.rebuild(model)
+
+
+## Passes the reef sections and the swell to the shaders, which scale and shape the built wave with them exactly as
+## WaveModel.section_key does for the rider.
+func feed_reef() -> void:
+	var a := Vector4(1000.0, 0.001, 0.0, 0.0)
+	var b := a
+	if model.reef != null:
+		a = model.reef.uniform_for(0, model.height(), WaveModel.MIN_HEIGHT, WaveModel.MAX_HEIGHT)
+		b = model.reef.uniform_for(1, model.height(), WaveModel.MIN_HEIGHT, WaveModel.MAX_HEIGHT)
+	for material: ShaderMaterial in [_wave_material, _water_material, _mist_material]:
+		material.set_shader_parameter("reef_a", a)
+		material.set_shader_parameter("reef_b", b)
+		material.set_shader_parameter("swell", model.swell)
 
 
 ## Where in its cycle the lip is at d, 0 to 1, right now: the same number the shader computes.
@@ -149,15 +200,17 @@ static func lip_morph(phase: float) -> Vector2:
 
 ## Points the camera so that `focus` (the surfer's feet, in world meters) lands at `screen_x` (a
 ## fraction of the width) and SURFER_SCREEN_Y, and the horizon on HORIZON_Y. `yaw_degrees` turns the
-## camera: positive looks left from behind the surfer, negative looks right from ahead of them.
-func frame(focus: Vector3, yaw_degrees: float, screen_x: float) -> void:
-	var tan_half := tan(deg_to_rad(CAMERA_FOV * 0.5))
+## camera: positive looks left from behind the surfer, negative looks right from ahead of them. `fov_degrees` and
+## `distance` (meters) let the camera tuck in a little for the barrel.
+func frame(focus: Vector3, yaw_degrees: float, screen_x: float, fov_degrees := CAMERA_FOV, distance := CAMERA_DISTANCE) -> void:
+	_camera.fov = fov_degrees
+	var tan_half := tan(deg_to_rad(fov_degrees * 0.5))
 	var aspect := float(_viewport.size.x) / float(_viewport.size.y)
 	var pitch := atan((0.5 - HORIZON_Y) * 2.0 * tan_half)
 	var basis := Basis.from_euler(Vector3(-pitch, deg_to_rad(yaw_degrees), 0.0), EULER_ORDER_YXZ)
 	var ray := Vector3((screen_x - 0.5) * 2.0 * tan_half * aspect, -(SURFER_SCREEN_Y - 0.5) * 2.0 * tan_half, -1.0)
 	_camera.basis = basis
-	_camera.position = focus - basis * ray * CAMERA_DISTANCE
+	_camera.position = focus - basis * ray * distance
 
 
 ## Where a world position lands on this control, in pixels of this control.

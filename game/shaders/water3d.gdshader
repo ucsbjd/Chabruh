@@ -20,7 +20,35 @@ uniform vec4 foam_lit : source_color;
 uniform vec4 foam_shade : source_color;
 uniform vec4 wave_shadow : source_color;
 uniform vec4 sun_glint : source_color;
+uniform vec4 sky_peach : source_color;
 uniform vec3 sun_dir = vec3(-0.62, 0.20, -0.76);
+
+// The reef (SectionDirector): two sections as (centre d, half width, height gain, kind), where kind is 0 wall,
+// 1 channel, 2 racecourse, 3 bowl; and the swell, the whole wave's height as a factor (near 0 in a lull).
+// WaveModel.section_key does the same sums for the rider, so keep them together.
+uniform vec4 reef_a = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform vec4 reef_b = vec4(1000.0, 0.001, 0.0, 0.0);
+uniform float swell = 1.0;
+
+float reef_weight(vec4 r, float d) {
+	return 1.0 - smoothstep(0.0, 1.0, abs(d - r.x) / r.y);
+}
+
+// How much of the wave's height the reef and the swell give it at d.
+float reef_scale(float d) {
+	return swell * (1.0 + reef_weight(reef_a, d) * reef_a.z + reef_weight(reef_b, d) * reef_b.z);
+}
+
+// How much bowl (kind 3) or of the kinds from `kind` up (2: racecourse and bowl) there is at d, 0 to 1.
+float reef_kind(float d, float kind) {
+	return min(reef_weight(reef_a, d) * step(kind - 0.5, reef_a.w) + reef_weight(reef_b, d) * step(kind - 0.5, reef_b.w), 1.0);
+}
+
+// One section's reef patch: mottled in the reef's own place, so it travels with the section.
+float reef_patch(vec4 r, float d, float z) {
+	float mottle = texture(noise_warp, vec2(d - r.x, z) * 0.055 + 0.17).r;
+	return reef_weight(r, d) * step(2.5, r.w) * smoothstep(0.38, 0.62, mottle);
+}
 
 varying vec3 wpos;
 
@@ -34,8 +62,8 @@ void fragment() {
 
 	// Slow broad swells in colour, with the sea sliding past the camera.
 	vec2 flow = wpos.xz - vec2(scroll, 0.0);
-	float swell = texture(noise_warp, flow * 0.012).r;
-	vec3 col = mix(swell_deep.rgb, swell_top.rgb, smoothstep(0.30, 0.70, swell));
+	float broad = texture(noise_warp, flow * 0.012).r;
+	vec3 col = mix(swell_deep.rgb, swell_top.rgb, smoothstep(0.30, 0.70, broad));
 
 	// The sea reflects the sky in big patches: violet and pink under the horizon haze, gold where
 	// the sun's light lands, like the foreground of the key frame.
@@ -55,13 +83,22 @@ void fragment() {
 	float d = clamp((-wpos.x - profile_d0) / (profile_d1 - profile_d0), 0.0, 1.0);
 	vec4 pr = texture(profile, vec2(d, 0.5));
 	float from_trough = wpos.z - pr.g;                      // beach side of the wave's base is positive
-	float near_wave = 1.0 - smoothstep(0.0, 4.0 + pr.r, abs(from_trough));
+	float calm_sea = smoothstep(0.1, 0.6, swell);           // in a lull there is no wave to shade or foam the water
+	float near_wave = (1.0 - smoothstep(0.0, 4.0 + pr.r, abs(from_trough))) * calm_sea;
 	col = mix(col, wave_shadow.rgb, near_wave * 0.35);
+
+	// A shallow reef bowl shows through the water in front of the wave before the wave reaches it: soft dark violet
+	// patches with warm coral in them.
+	float wd = -wpos.x;
+	float reef = max(reef_patch(reef_a, wd, wpos.z), reef_patch(reef_b, wd, wpos.z));
+	reef *= smoothstep(-1.0, 2.0, from_trough) * (1.0 - smoothstep(8.0, 26.0, from_trough));
+	float coral = smoothstep(0.55, 0.75, texture(noise_warp, wpos.xz * 0.13 + vec2(0.4, 0.8)).r);
+	col = mix(col, mix(mix(foam_shade.rgb, wave_shadow.rgb, 0.45), sky_peach.rgb, coral * 0.45), 0.42 * reef);
 
 	float ragged = texture(noise_warp, flow * 0.09).r - 0.5;
 	float lumps = texture(noise_warp, flow * 0.25 + vec2(time * 0.08, 0.0)).r - 0.5;   // the churned water is choppy, not smooth
 	float wash = (1.0 - smoothstep(0.0, 0.7 + pr.a * 4.2, from_trough + ragged * (1.2 + pr.a * 3.0) + lumps * pr.a * 2.5)) * step(0.0, from_trough + 0.5);
-	float foam_amount = wash * (0.15 + 0.85 * pr.a);
+	float foam_amount = wash * (0.15 + 0.85 * pr.a) * calm_sea;
 	float clump = smoothstep(0.0, 0.5, texture(noise_warp, flow * 0.12).r);
 	col = mix(col, mix(foam_lit.rgb, foam_shade.rgb, (1.0 - clump) * 0.6), clamp(foam_amount * step(0.5, pr.r) * 1.4, 0.0, 1.0));
 

@@ -5,27 +5,97 @@ extends RefCounted
 ## How they move: a heading `theta` in the face plane (0 down the line toward +d, negative nose down toward the
 ## trough, positive nose up toward the lip), the turn rate `omega`, a speed `v` in m/s and a hip `compression`.
 ##
-## Energy comes from the slope under the board. The face is steepest, and the wave carries the most energy, near the
-## peak where it is first breaking (small d, on the right of the screen); down the shoulder it flattens, and the trough
-## is flat. So dropping into the steep part builds speed, carrying it to the flat trough only coasts and then bleeds it
-## away, and pointing across the line (instead of along the way the wave is breaking) costs speed to skidding and lets the
-## curl gain on him. How fast he can change direction is limited by grip (sideways acceleration), so the faster he goes
-## the wider he turns. Pumping, small strokes up and down the face, adds speed smoothly in proportion to the rhythm.
+## Energy comes from the slope under the board and the water drawing up the face (WaveModel.draw_at). Both are strongest
+## near the peak where the wave is breaking (small d, on the right of the screen); down the shoulder the face relaxes,
+## the draw calms and the wave's push fades (WaveModel.power_at), so out in front he slows and the curl comes back to
+## him, and the trough is flat. So dropping into the steep part builds speed, carrying it to the flat trough only coasts
+## and then bleeds it away, and pointing across the line (instead of along the way the wave is breaking) costs speed to
+## skidding and lets the curl gain on him. How fast he can change direction is limited by grip (sideways acceleration),
+## so the faster he goes the wider he turns. Pumping, small strokes up and down the face, adds speed in proportion to the rhythm.
 ##
-## The nose leads: the player's push sets a target heading, a stiff spring turns the board to it, the hips follow on a
-## softer one, and `lead` says how far the head and chest should already be turned into the next move. For now the old
-## input is turned into pushes and a point to aim at along the wave; the finger controls replace that in step 11.
-## Spray and the wake come from speed times sharpness.
+## Balance is the core of every move, as in the J-Bay footage (docs/balance.md): the board can swing through 150 degrees
+## while the body stays close to upright, because the centre of mass always sits over the feet along the apparent gravity
+## (gravity plus the pull of the turn). So he turns the way a skier or a cyclist does: the player's push sets a heading to
+## aim for, he leans his centre of mass into the turn at the speed a body can move it, and the board carves only as
+## tight as that lean holds. The turn rate follows from the lean, never the other way round, so no input can make him
+## jerk. `balance` is the direction from his feet to his centre of mass (upright when trimming, square to the face when
+## climbing or dropping straight, into the wave in a bottom turn, laid back in a top turn); the board rolls onto its rail
+## by part of the lean and his legs take the rest. He crouches as the load lightens and extends under load, which is the
+## rhythm of a real bottom turn and top turn. `strain` (debug) says how far the player's input asked for more than a body
+## can do; above 1 a real surfer would have fallen, though here he never does.
+## `aim` is the heading he has been asked for and `lead` how far it is from where the board points: the front arm and
+## the head go there first, then the chest, the hips and the board (the J-Bay and Ethan Ewing footage). At the lip a hard
+## reversal swings the board round on its tail from nearly straight up to straight down (`snap_omega`), and the lip holds
+## the tail while it does (`snapping`), so the whole pivot happens at the top and he drops once the nose is round. A push
+## holds until the board has turned to it, so one flick commits to a move (a drop, a climb to the lip); climbing hard he
+## is committed to the lip and any reversal waits for the top. A cutback needs room on the shoulder; nearer the curl the
+## same push is a snap. Steering back behind where he is stalls him: weight over the tail, speed bleeds off and the curl
+## catches up. Closing on the curl is soft-limited and eases to a stop, and near it he settles: he tucks, the board comes
+## round along the line and he finds his height and balance (`tuck`), then rides on. For now the old input is turned into
+## pushes and a point to aim at along the wave; the finger controls replace that in step 11.
+## Spray and the wake come from speed times sharpness, and the spray leaves off the outside of the turn (`spray_dir`).
 
-const D_NEAR := -2.0                 # closest to the curl (inside the barrel zone)
-const D_FAR := 12.0                  # far down the shoulder
-const STEER_CURVE := 1.3             # puts the pocket near the middle of the steering range
+const D_NEAR := -3.0                 # closest to the curl (inside the barrel zone)
+const D_FAR := 16.0                  # far down the shoulder, where the face has relaxed
+const STEER_CURVE := 1.6             # puts the pocket near the middle of the steering range
+const CURL_CUSHION := 2.5            # meters from D_NEAR over which closing on the curl eases to a stop
+const FAR_CUSHION := 2.0             # ...and from D_FAR over which running ahead does
+const BACK_MAX := 1.0                # the fastest he closes on the curl, as a factor of the peel speed (a soft limit)
+const SETTLE_FROM := 1.0             # meters ahead of the peel point: nearer the curl than this he tucks and settles
+const SETTLE_HEIGHT := 0.45          # ...at this height on the face
+const BARREL_HEIGHT := 0.3           # ...or this one in a barrel, low under the lip
+const SETTLE_GAIN := 2.0             # meters per second of rise he steers for, per face height away from it
+const SETTLE_PULL := 0.6             # ...and at most this many
+const DROP_SINK_RATE := 0.8         # face heights a second of drop at which he is fully sunk for it
+const TUCK_CROUCH := 0.35            # how much deeper he crouches, tucked by the curl
 const U_LOW := 0.06
 const U_HIGH := 0.96
-const THETA_MIN := -1.45             # almost straight down the face
+const THETA_MIN := -2.9              # past straight down, round toward the curl: only reached in a cutback
+const STICK_MIN := -1.45             # how far down the player's push can point him outside a cutback (almost straight down)
+const DROP_MAX := 1.25               # the steepest drop he aims for outside a cutback (radians): a snap leaves him facing down the
+                                     # face, but not straight down it, where the curl would gain on him all the way to the bottom
+const STICK_FULL := 1.45             # radians: the push that points the board fully the way it was pushed
+const STICK_REACHED := 0.15          # radians: once the board is this close to the heading asked for, the push starts to fade
+const PUSH_MEMORY := 0.12           # seconds: pushes closer together than this are one gesture still coming in
+const REVERSE_PUSH := 0.03           # face heights of push the other way that cancel the held push (a new move)
+## Climbing harder than CLIMB_COMMIT, below the lip, he carries on up: the heading asked for cannot drop below
+## CLIMB_HOLD until he reaches the lip, where the reversal becomes a snap.
+const CLIMB_COMMIT := 0.85
+const CLIMB_HOLD := 0.8
+## The snap: at the lip, with the nose no lower than SNAP_HEADING, a reversal of more than SNAP_START radians commits to
+## turning the nose at least SNAP_DOWN down the face. The lip holds the tail (over LIP_HOLD_TIME) until the nose is within
+## SNAP_RELEASE of that heading, then he drops. Once started it carries through, whatever the input does.
+const SNAP_HEADING := -0.3
+const SNAP_START := 0.6
+const SNAP_RELEASE := 0.3
+const SNAP_DOWN := 0.6
+const LIP_HOLD_TIME := 0.05
+## The cutback (the Bells footage): out on the shoulder (more than CUT_ROOM ahead of the peel point) near the top of the
+## face (above CUT_FROM) a hard push down (the stick past CUT_PUSH and still being shoved down at least CUT_SHOVE) carries
+## the turn on past straight down, round toward the curl, up to CUTBACK_REACH: carved on the rail (only CUT_PIVOT of it
+## skids round on the tail), bleeding CUT_DRAG of his speed a second. Once he is round (past CUT_TURNED), or he meets
+## the foam (CUT_FOAM ahead of the peel point), the water pivots the board back toward the line over REBOUND_TIME, and he
+## is back to ordinary riding once his heading is above CUT_DONE.
+const CUT_ROOM := 5.0
+const CUT_FOAM := 1.5
+const CUT_PIVOT := 0.5
+const CUT_DRAG := 0.6
+const CUT_FROM := 0.72
+const CUT_PUSH := -1.3
+const CUT_SHOVE := -0.025            # ...with a push at least this hard (face heights in one step): scrolling down as hard as he can
+const CUTBACK_REACH := 2.75
+const CUT_TURNED := -2.55
+const CUT_DONE := -0.5
+const REBOUND_TIME := 0.25
+## Pumping (the 300 fps footage): running behind where he is steered, he pumps for speed down the line, little turns
+## up and down the face with the knees, one every PUMP_PERIOD seconds, PUMP_SWING radians each way, more the further
+## behind he is (from PUMP_SLACK to PUMP_RANGE meters behind), folding PUMP_CROUCH as the nose goes down.
+const PUMP_PERIOD := 1.3
+const PUMP_SWING := 0.32
+const PUMP_SLACK := 0.5
+const PUMP_RANGE := 2.5
+const PUMP_CROUCH := 0.18
 const THETA_MAX := 1.5               # almost straight up it
-const SPRING_K := 144.0              # board heading: critically damped, about 80 ms (natural frequency 12 rad/s)
-const SPRING_D := 24.0
 const COMPRESSION_K := 100.0         # hips: slightly underdamped, about 120 ms (natural frequency 10 rad/s)
 const COMPRESSION_D := 17.0
 const LEAD_MAX := 0.8
@@ -36,6 +106,50 @@ const OMEGA_FULL := 3.0              # turn rate that counts as a fully sharp ca
 const STICK_SMOOTHING := 0.10        # seconds: how smoothly the heading request follows the player's pushes
 const MOVE_HOLD := 0.3               # seconds a move label stays once seen
 const BURST_POWER := 1.9             # spray strength per unit of speed times sharpness
+const SPRAY_STEP := 0.15             # a turn that bites this much harder (speed times sharpness) throws again, even straight after a burst
+const LIP_SPRAY := 0.5               # how much more a snap at the lip throws
+const LIP_SPRAY_DIR := Vector3(0.25, 0.85, -0.45)  # hitting the lip the spray goes up and back over the crest (+x toward the curl, -z over the back)
+const MIN_PRESS := 0.6               # the least the board presses on his feet, in g: high on a steep face the water rising up it holds the board
+const LIGHT_UPRIGHT := 0.7           # nearly weightless (cresting, the lip holding the tail, dropping down a steep face) he keeps his
+                                     # body this much closer to upright, as the footage shows, instead of square to a near-vertical face
+const PITCH_MAX := 0.35              # how far his weight goes over the front or back foot, radians
+const LOAD_SMOOTHING := 0.08         # seconds: the feel of the load through the legs
+const CURVE_SMOOTHING := 0.15        # seconds for the push of the face's curve to come and go through his legs
+const PIVOT_SMOOTHING := 0.15        # seconds for a pivot on the tail to build or fade...
+const SNAP_SMOOTHING := 0.08         # ...and in a snap, where it comes on harder
+const PIVOT_ACCEL := 10.0            # rad/s squared: the fastest a pivot spins up or settles (a top turn comes on gently)...
+const SNAP_ACCEL := 45.0             # ...and in a snap, which still starts smoothly
+const SNAP_FROM := 0.95              # face slope (radians) where turns start to pivot on the tail rather than carve...
+const SNAP_FULL := 1.25              # ...and where they pivot fully
+const FACE_CUSHION := 0.15           # how far from the top or the bottom of the face (in face heights) a climb or drop starts to ease
+const GUARD_NEAR := 0.2              # seconds from the trough: the turn out of it is fully on...
+const GUARD_FAR := 0.6               # ...and it starts this far out
+const TOP_GUARD_NEAR := 0.08        # seconds from the top: a climb not committed to the lip is fully eased level...
+const TOP_GUARD_FAR := 0.4           # ...and starts to ease this far out
+const TOP_EASE := 0.08               # at the top of the face the heading eases level only over this last bit (face heights), so he
+                                     # can drive up nearly vertically and hit the lip; the face's cushion slows the climb
+const ROOM_FROM := -1.5              # meters from the peel point: behind here he runs along the line in the barrel...
+const ROOM_FULL := 0.3               # ...and ahead of here he can point anywhere
+const DRIVE_CAP := 1.2               # the most the arcade drive chases, as a factor of trim speed, before d is added
+const ALONG_FROM := -0.1             # cos of the heading where the drive starts to push (pointing back toward the curl it does not)...
+const ALONG_FULL := 0.4              # ...and where it pushes fully
+const SHOULDER_PACE := 0.6          # where the wave has no push left, the drive keeps only this share of the curl's pace
+const REF_D := 2.0                   # where the water drag is set from: the trim heading holds trim speed here, mid face
+const BURIED_GRIP := 0.35           # how much more turn a buried rail holds, deep and low in a bottom turn
+const LIP_FROM := 0.78               # height up the face where the board starts to pivot on its tail at the lip...
+const LIP_FULL := 0.9                # ...and where it is all pivot
+const PIVOT_SKID := 0.35             # speed lost per second per rad/s of pivot while the tail skids round
+const LIP_GAIN := 4.0                # rad/s of pivot per radian still to turn when the board is light at the top...
+const SNAP_GAIN := 7.0               # ...and in a snap (full speed until the last radian)
+const STALL_SLACK := 1.0             # meters ahead of where he is steered before he starts to stall...
+const STALL_RANGE := 3.0             # ...and how much farther ahead for a full stall
+const STALL_SMOOTHING := 0.2         # seconds for his weight to go back over the tail
+const STALL_STEER := 0.25            # how far behind the pocket the steering has to go for a full stall
+## What a body can do, for the strain readout: how far the centre of mass can lag where the input wants it, how fast the
+## input may swing the wanted lean, and the most load the legs hold, before a real surfer would have fallen.
+const STRAIN_LAG := 0.7              # radians
+const STRAIN_RATE := 4.0             # radians per second
+const STRAIN_LOAD := 3.0             # g
 
 var d := 3.0
 var u := 0.5
@@ -51,16 +165,58 @@ var lead := 0.0                      # how far the head and chest are already tu
 var rail_roll := 0.0                 # radians, onto the inside rail (positive) or the outside rail (negative)
 var sharpness := 0.0
 var move := "trim"
+var aim := 0.0                       # the heading he has been asked for, radians (after the guardrails)
+var stall := 0.0                     # 0 to 1: weight back over the tail to slow down
+var pivoting := 0.0                  # 0 to 1: how much the board is turning on its tail rather than carving
+var cutting_back := false            # in a cutback: allowed round toward the curl, until the board comes back to the line
+var pumping := 0.0                   # 0 to 1: how hard he is pumping for speed
+var snapping := false                # hitting the lip: the lip holds the tail while the board pivots round
+var tuck := 0.0                      # 0 to 1: settling by the curl, small and compact
+var lip_hit := 0.0                   # 0 to 1: how much the turn now is a snap off the lip
+var spray_dir := Vector3(0.6, 0.6, 0.0)  # world direction the spray leaves the tail
+## The centre of mass. `lean` is across the board from the face's normal (positive toward the wave, the toe side, which
+## turns the nose up the face; negative toward the beach, the heel side); `carve` is the part of it that turns him (the
+## rest just holds his line on the slope); `pitch` is over the front (positive) or back foot.
+var lean := 0.0
+var lean_vel := 0.0
+var carve := 0.0
+var pitch := 0.0
+var balance := Vector3.UP            # world direction from his feet to his centre of mass
+var load_g := 1.0                    # how hard the board presses on his feet, in g
+## Debug: how far the input asks for more than a body can do (above 1 a real surfer would fall), why, and how often.
+var strain := 0.0
+var strain_reason := ""
+var falls := 0
+var fall_reason := ""
 
 var _fresh := true
 var _stick := 0.0                    # radians of heading the player is asking for; fades when the input stops
 var _stick_smooth := 0.0             # the same, smoothed so a scroll notch is not a jerk
+var _against := 0.0                  # push against the held one so far
+var _since_push := 1.0               # seconds since the last push
+var _lip_hold := 0.0                 # 0 to 1: how much the lip is holding the tail
+var _snap_to := 0.0                  # the heading a snap is turning the nose to
+var _last_burst := 0.0               # speed times sharpness of the last burst, while it is recent
 var _stick_slow := 0.0               # a slow average of the stick: what is left over after removing it is the rhythm
 var _pump_amount := 0.0              # how much rhythmic up-and-down the player is doing, smoothed
 var _burst_ready_in := 0.0
 var _pending_burst := 0.0
 var _move_until := 0.0
 var _clock := 0.0
+var _press_curve := 0.0              # m/s squared the concave face adds to the press, smoothed
+var _push_along := 0.0               # m/s squared of drive (positive) or drag (negative) along the board, smoothed
+var _pivot := 0.0                    # rad/s the board swings round on its tail while it is light, smoothed
+var _pump_phase := 0.0
+var _rebounding := false             # round in a cutback: the water is pivoting the board back
+var _load_rhythm := 0.0              # the crouch that the rhythm of the load asks for, see _update_crouch
+var _turning_g := 0.0                # the sideways pull of the carve, in g
+var _lean_asked := 0.0
+var _lean_target := 0.0
+var _lean_asked_prev := 0.0
+var _lean_asked_rate := 0.0
+var _last_point := Vector3.ZERO
+var _last_normal := Vector3.UP
+var _straining := false
 
 
 static func d_for(steer: float) -> float:
@@ -92,6 +248,23 @@ func place(meters_ahead: float, face_height: float) -> void:
 	_stick_smooth = 0.0
 	_stick_slow = 0.0
 	_pump_amount = 0.0
+	lean_vel = 0.0
+	_pivot = 0.0
+	stall = 0.0
+	cutting_back = false
+	_rebounding = false
+	pumping = 0.0
+	_press_curve = 0.0
+	_push_along = 0.0
+	_load_rhythm = 0.0
+	_lean_asked_rate = 0.0
+	strain = 0.0
+	snapping = false
+	tuck = 0.0
+	_against = 0.0
+	_lip_hold = 0.0
+	_last_burst = 0.0
+	aim = 0.0
 
 
 ## The slope of the face under the board, in radians: from the model's real surface, so it is steepest near the peak
@@ -110,74 +283,247 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	var v_trim := TRIM_SPEED * peel
 	var v_max := MAX_SPEED * peel
 	var face_h := maxf(1.2, model.crest_height_at(d))
-	var phi := slope_at(model, d, u)
+	# The face here: its outward normal n, the way the nose points (f), and the side a positive turn swings it toward
+	# (s: up the face when he runs down the line).
+	var here := model.surface_point(d, u)
+	var n := model.surface_normal(d, u).normalized()
+	var phi := acos(clampf(n.y, 0.0, 1.0))
 	var sin_phi := sin(phi)
-	# The wave's own pull up the face, bigger where it is bigger. With no input he is carried up it slowly
-	# (drift_climb, meters per second of rise); holding his line takes a small nose-down heading.
-	var draw := tuning.v_draw_base * clampf(face_h / 2.5, 0.4, 1.3)
+	var g := tuning.g_eff
+	# The water rising up the face lifts him (strongest in the pocket and up by the lip, calm down the shoulder). With no
+	# input he is carried up it slowly (drift_climb, meters per second of rise); holding his line takes a small nose-down
+	# heading, and pointed down the line that lift is what drives him.
+	var draw := tuning.v_draw_base * model.draw_at(d, u)
+	var fresh := _fresh
 	if _fresh:
 		v = v_trim
-	var theta_trim := asin(clampf((tuning.drift_climb - draw) / maxf(v * maxf(sin_phi, 0.3), 0.5), -0.6, 0.6))
+	# Near the curl he settles: instead of drifting up he steers for a comfortable height (low under the lip in a barrel).
+	var near_curl := 1.0 - smoothstep(D_NEAR + 0.5, SETTLE_FROM, d)
+	var settle := clampf((lerpf(SETTLE_HEIGHT, BARREL_HEIGHT, model.barrel()) - u) * SETTLE_GAIN, -SETTLE_PULL, SETTLE_PULL)
+	var climb := lerpf(tuning.drift_climb, settle, near_curl)
+	var theta_trim := asin(clampf((climb - draw) / maxf(v * maxf(sin_phi, 0.3), 0.5), -0.6, 0.6))
 	if _fresh:
 		_fresh = false
 		theta = theta_trim
+		_last_point = here
+		_last_normal = n
 
-	# The player's pushes (scroll, keys, drag) move a virtual stick that fades back to centre, so scrolling down points
-	# the nose down and letting go lets the wave take him again. A smoothed copy steers, so there are no jerks.
-	_stick = clampf(_stick * exp(-delta / tuning.stick_decay) + height_push * tuning.stick_gain, -1.45, 1.45)
-	_stick_smooth = lerpf(_stick_smooth, _stick, 1.0 - exp(-delta / STICK_SMOOTHING))
+	# The player's pushes (scroll, keys, drag) move a virtual stick, so scrolling down points the nose down. While a push
+	# is still coming in the stick fades back toward centre as it goes (a slow steady scroll is a gentle carve); once the
+	# gesture stops, what is left holds while the board is still turning to it (one flick commits to a drop or a climb to
+	# the lip) and fades once he has got there, so letting go lets the wave take him again. Pushing the other way starts a
+	# new move at once. A smoothed copy steers, so there are no jerks.
+	_update_cutback(height_push)
+	var stick_min := -CUTBACK_REACH if cutting_back else STICK_MIN
+	if height_push * _stick < 0.0:
+		_against += absf(height_push)
+		if _against > REVERSE_PUSH:
+			_stick = 0.0
+	elif height_push != 0.0:
+		_against = 0.0
+	# (the move is done once the board has turned to it, or the face has run out the way he was pushed)
+	var reached := 1.0 - smoothstep(STICK_REACHED, 3.0 * STICK_REACHED, absf(aim - theta))
+	# (a cutback carves round across the face, so reaching the lower face does not end it)
+	if not cutting_back:
+		reached = maxf(reached, smoothstep(0.35, 0.2, u) if _stick < 0.0 else smoothstep(0.75, 0.9, u))
+	_since_push = 0.0 if height_push != 0.0 else _since_push + delta
+	if _since_push < PUSH_MEMORY:
+		reached = 1.0
+	# (coming round in a cutback the push holds until he is round and rebounds)
+	var fade := 1.0 if cutting_back and not _rebounding else exp(-delta / lerpf(tuning.stick_hold, tuning.stick_decay, reached))
+	_stick = clampf(_stick * fade + height_push * tuning.stick_gain, stick_min, STICK_FULL)
+	if _rebounding:
+		_stick = lerpf(_stick, 0.0, 1.0 - exp(-delta / REBOUND_TIME))
+	var want_d := d_for(steer)
+	# Pumping: a steady rhythm of small turns, folded into the stick so it also feeds the pump's speed.
+	pumping = lerpf(pumping, clampf((want_d - d - PUMP_SLACK) / PUMP_RANGE, 0.0, 1.0) * (0.0 if cutting_back else 1.0), 1.0 - exp(-delta / 0.5))
+	_pump_phase = fmod(_pump_phase + TAU * delta / PUMP_PERIOD, TAU)
+	var pump_turn := PUMP_SWING * pumping * sin(_pump_phase)
+	_stick_smooth = lerpf(_stick_smooth, _stick + pump_turn, 1.0 - exp(-delta / STICK_SMOOTHING))
 	_stick_slow = lerpf(_stick_slow, _stick_smooth, 1.0 - exp(-delta / 0.6))
 	_pump_amount = lerpf(_pump_amount, absf(_stick_smooth - _stick_slow), 1.0 - exp(-delta / 0.35))
-	var want_d := d_for(steer)
-	var target_theta := clampf(theta_trim + _stick_smooth, THETA_MIN, THETA_MAX)
-	# Near the curl there is no room to point across the line: the closer he is, the more the heading is held along
-	# the way the wave is breaking. Farther down the wave he can point almost straight down or up.
-	var room := smoothstep(0.3, 2.8, d)
-	var limit := lerpf(0.3, THETA_MAX, room)
-	target_theta = clampf(target_theta, -limit, limit)
-	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them.
-	if u < 0.15 and target_theta < 0.0:
-		target_theta = lerpf(0.0, target_theta, clampf(u / 0.15, 0.0, 1.0))
-	if u > 0.88 and target_theta > 0.0:
-		target_theta = lerpf(target_theta, 0.0, clampf((u - 0.88) / 0.12, 0.0, 1.0))
+	# A small push turns him from his trim heading; a full one points the board the way he pushed (straight up the face).
+	var target_theta := clampf(theta_trim * (1.0 - clampf(absf(_stick_smooth) / STICK_FULL, 0.0, 1.0)) + _stick_smooth, THETA_MIN, THETA_MAX)
+	var wanted := target_theta  # what the player asks for, before the face's guardrails (only this can start a snap)
+	# Inside the barrel, behind the peel point, there is no room to point across the line: the heading is held along the
+	# way the wave is breaking. In the pocket in front of the curl, and anywhere ahead of it, he can go straight down or up
+	# (the pocket is where the vertical turns happen).
+	var room := smoothstep(ROOM_FROM, ROOM_FULL, d)
+	var limit := lerpf(0.35, THETA_MAX, room)
+	var low_limit := lerpf(0.35, -THETA_MIN if cutting_back else DROP_MAX, room)
+	target_theta = clampf(target_theta, -low_limit, limit)
+	# Soft guardrails: scoop out of the trough and ease off at the crest instead of hitting them, starting while there is
+	# still time for a body to make the turn (a surfer sets up a bottom turn or a top turn well before the end of the face).
+	var heading_rise := (v * sin(theta) * sin_phi + draw) / face_h  # face heights a second, before the face's ends soften it
+	if target_theta < 0.0:
+		var to_bottom := (u - U_LOW) / maxf(-heading_rise, 0.001)
+		# (coming round in a cutback the board is not diving at the trough, so only the trough itself stops it)
+		var early := 1.0 if cutting_back and not _rebounding else smoothstep(GUARD_NEAR, GUARD_FAR, to_bottom)
+		target_theta *= minf(clampf(u / 0.15, 0.0, 1.0), early)
+	if target_theta > 0.0:
+		var ease := clampf((U_HIGH - u) / TOP_EASE, 0.0, 1.0)
+		# A climb that is not committed to the lip rounds into a top turn while there is still time to make it; a vertical
+		# one drives on into the lip and snaps there.
+		if theta < CLIMB_COMMIT:
+			var to_top := (U_HIGH - u) / maxf(v * sin(theta) * sin_phi / face_h, 0.001)
+			ease = minf(ease, smoothstep(TOP_GUARD_NEAR, TOP_GUARD_FAR, to_top))
+		target_theta *= ease
+	# Driving hard up the face he is committed to the lip: a real surfer going vertical cannot turn back halfway up, so the
+	# reversal waits for the top, where the lip takes the tail and it becomes a snap.
+	if theta > CLIMB_COMMIT and u < LIP_FROM and not cutting_back:
+		target_theta = maxf(target_theta, minf(theta, CLIMB_HOLD))
+	var at_lip := smoothstep(LIP_FROM, LIP_FULL, u)
+	_update_snap(at_lip, maxf(wanted, -DROP_MAX))
+	if snapping:
+		target_theta = _snap_to
+	aim = target_theta
 
-	# Tier 1: the head and chest turn into the move at once. Tier 2: the board follows on a stiff spring, but only as
-	# fast as grip allows: sideways acceleration (speed times turn rate) is limited, so fast means wide turns.
+	var t_crest := Vector3(-1.0, 0.0, 0.0)
+	var t_face := t_crest.cross(n).normalized()
+	t_crest = n.cross(t_face).normalized()
+	var f := t_crest * cos(theta) + t_face * sin(theta)
+	var s := t_face * cos(theta) - t_crest * sin(theta)
+	# How hard the board presses up into his feet across the face: gravity's share, plus the concave face pushing back
+	# as he rides up or down its curve (from how the normal turned under him since the last step).
+	var curve := -((here - _last_point) / delta).dot((n - _last_normal) / delta)
+	_press_curve = lerpf(_press_curve, clampf(curve, -g, 2.0 * g), 1.0 - exp(-delta / CURVE_SMOOTHING))
+	_last_point = here
+	_last_normal = n
+	var press := maxf(g * n.y + _press_curve, MIN_PRESS * g)
+	# The lean that holds this heading on the slope without turning: with the nose down the line it is the slope itself
+	# (he stands upright); with the nose straight up or down the face it is none (he stands square to the face).
+	var hold := atan2(g * s.y, press)
+	if fresh:
+		lean = hold
+		_lean_target = hold
+		_lean_asked = hold
+		_lean_asked_prev = hold
+
+	# Tier 1: the head and chest turn into the move at once.
 	lead = clampf(target_theta - theta, -LEAD_MAX, LEAD_MAX)
-	var omega_cap := minf(tuning.max_omega, tuning.grip / maxf(v, 4.0))
-	omega = clampf(omega + (SPRING_K * (target_theta - theta) - SPRING_D * omega) * delta, -omega_cap, omega_cap)
-	theta = clampf(theta + omega * delta, THETA_MIN, THETA_MAX)
-	# Tier 3: the hips sink with speed and with the load of a turn, most in the tube, and rebound as the turn is left.
-	var load := clampf(v * absf(omega) / 20.0, 0.0, 1.0)
-	var target_crouch := clampf(0.18 + 0.30 * speed + 0.30 * load + model.barrel_amount_at(d, u) * 0.65, 0.1, 1.0)
-	compression_vel += (COMPRESSION_K * (target_crouch - compression) - COMPRESSION_D * compression_vel) * delta
-	compression = clampf(compression + compression_vel * delta, 0.0, 1.0)
+	# Tier 2: the centre of mass. The turn he wants (toward the aimed heading, no sharper than grip allows) needs a lean
+	# that keeps the pull of the turn and gravity together through his feet. He moves toward it as fast as a body can.
+	# When the board is light (cresting the face) or high on a face too steep to carve against (at the lip) he leans less
+	# and swings the board round under him on its tail instead, the way a snap pivots: the body stays over the board while
+	# the board comes round.
+	var steep := smoothstep(SNAP_FROM, SNAP_FULL, phi) * clampf((1.8 - load_g) / 0.8, 0.0, 1.0)  # (not while still driving hard up the face)
+	# At the very top only the tail is still in the water, so there it pivots however hard he came up (at_lip), and in a
+	# snap the lip holds the tail until the nose is round. Coming round in a cutback the board is carved on its rail with a
+	# little skid off the tail, throwing the fan; rebounding off the foam it pivots.
+	var coming_round := (1.0 if _rebounding else CUT_PIVOT) if cutting_back else 0.0
+	var light := 1.0 if snapping else maxf(maxf(clampf((1.0 - load_g) / 0.5, 0.0, 1.0), steep), maxf(at_lip, coming_round))
+	pivoting = light
+	# Deep in a compressed bottom turn the rail is buried and holds a tighter turn: that is what sends him vertical.
+	var buried := smoothstep(0.5, 0.9, compression) * clampf((0.6 - u) / 0.3, 0.0, 1.0)
+	var omega_cap := minf(tuning.max_omega, tuning.grip * (1.0 + BURIED_GRIP * buried) / maxf(v, 4.0))
+	var want_omega := clampf(tuning.head_gain * (target_theta - theta), -omega_cap, omega_cap)
+	_lean_asked = atan2(v * want_omega + g * s.y, press)  # the whole turn the input asks for (the strain readout judges this)
+	# Light, he stays over the board (close to the lean that holds his line) and lets the pivot turn it.
+	_lean_target = clampf(hold + (_lean_asked - hold) * (1.0 - light * tuning.pivot_share), hold - tuning.carve_max, hold + tuning.carve_max)
+	var wn := tuning.lean_response
+	lean_vel = clampf(lean_vel + (wn * wn * (_lean_target - lean) - 2.0 * wn * lean_vel) * delta, -tuning.lean_rate_max, tuning.lean_rate_max)
+	lean += lean_vel * delta
+	carve = lean - hold
+	# Tier 3: the board carves only as tight as his lean holds, so the turn rate is as smooth as his body. While it is
+	# light the pivot makes up the rest of the turn he asks for; the pivot skids, so his body only follows the carving part.
+	var carve_omega := clampf((press * tan(lean) - g * s.y) / maxf(v, 3.0), -omega_cap, omega_cap)
+	_turning_g = absf(v * carve_omega) / g
+	# The pivot is not limited by grip: with only the tail in the water a hard reversal at the lip swings the board from
+	# nearly straight up to straight down in about half a second (hitting the lip).
+	# (a snap, and the foam knocking the board back round in a cutback, pivot hard; a light top turn comes on gently)
+	var hard := snapping or _rebounding
+	var want_snap := clampf((SNAP_GAIN if hard else LIP_GAIN) * (target_theta - theta), -tuning.snap_omega, tuning.snap_omega)
+	var pivot_to := lerpf(_pivot, light * (want_snap - carve_omega), 1.0 - exp(-delta / (SNAP_SMOOTHING if hard else PIVOT_SMOOTHING)))
+	_pivot = move_toward(_pivot, pivot_to, (SNAP_ACCEL if hard else PIVOT_ACCEL) * delta)
+	var omega_limit := maxf(tuning.max_omega, tuning.snap_omega * light)
+	omega = clampf(carve_omega + _pivot, -omega_limit, omega_limit)
+	theta += omega * delta
+	if theta < THETA_MIN or theta > THETA_MAX:
+		theta = clampf(theta, THETA_MIN, THETA_MAX)
+		omega = 0.0
 
 	# Energy. The slope gives speed going down and takes it going up. Water drag is chosen so that the trim heading settles
 	# at trim speed in the middle of the wave; carving and skidding across the line take more. Pumping adds speed in
 	# proportion to the rhythm of the strokes, to how steep the face is here and to how much room there is left to speed up.
-	var mid_slope := slope_at(model, 2.0, 0.5)
-	var ref_trim := asin(clampf((draw - tuning.drift_climb) / (v_trim * sin(mid_slope)), 0.0, 0.6))
-	var k_water := tuning.g_eff * sin(mid_slope) * sin(ref_trim) / (v_trim * v_trim)
-	var a_slope := -tuning.g_eff * sin_phi * sin(theta)
-	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v - tuning.k_skid * absf(sin(theta)) * v
+	var mid_slope := slope_at(model, REF_D, 0.5)
+	var ref_draw := tuning.v_draw_base * model.draw_at(REF_D, 0.5)
+	var ref_trim := asin(clampf((ref_draw - tuning.drift_climb) / (v_trim * sin(mid_slope)), 0.0, 0.6))
+	var k_water := g * sin(mid_slope) * sin(ref_trim) / (v_trim * v_trim)
+	# (held at the lip with the nose already down he is not dropping yet, so the slope gives him nothing)
+	var a_slope := -g * sin_phi * sin(theta) * (1.0 - _lip_hold if theta < 0.0 else 1.0)
+	# Steered back behind where he is, he stalls: weight over the tail, the nose lifts and the water holds him back,
+	# so the curl catches up and he can sit deep in the pocket, then the steeper face there sends him off again.
+	var steering_back := clampf((RideInput.REST_STEER - steer) / STALL_STEER, 0.0, 1.0)
+	stall = lerpf(stall, steering_back * clampf((d - want_d - STALL_SLACK) / STALL_RANGE, 0.0, 1.0), 1.0 - exp(-delta / STALL_SMOOTHING))
+	# Swinging the board round on its tail throws the big fan, and that spray is speed: a pivot skids the speed off.
+	var a_drag := -k_water * v * v - tuning.k_carve * absf(omega) * v - tuning.k_skid * absf(sin(theta)) * v - tuning.stall_drag * stall * v - PIVOT_SKID * pivoting * absf(_pivot) * v
+	if cutting_back and not _rebounding:
+		a_drag -= CUT_DRAG * v
 	var headroom := clampf(1.0 - speed, 0.0, 1.0)
-	var a_pump := tuning.k_pump * _pump_amount * sin_phi * headroom
-	# Drive toward the speed that holds (or closes on) the point being aimed at; the slope still shows through.
-	var want_v := peel / maxf(cos(theta), 0.35) + clampf(tuning.drive_reach * (want_d - d), -0.4 * peel, 0.8 * peel)
+	var push := model.power_at(d)  # the wave's push here: all of it in the pocket, fading down the shoulder
+	# (pumping works off the wave's own push too, so on the soft shoulder it gains little)
+	var a_pump := tuning.k_pump * _pump_amount * sin_phi * headroom * push * push
+	# Drive toward the speed that holds (or closes on) the point being aimed at; the slope still shows through. Pointing
+	# well up or down the face it does not chase the curl harder than DRIVE_CAP times trim speed (gravity does the rest),
+	# so he is not flying through the bottom turn too fast to come round. It is the wave's push, so it fades down the
+	# shoulder (out in front he slows and the curl comes back to him), and it only pushes along the line: pointed back
+	# toward the curl in a cutback it does nothing, so he is not driven back into it.
+	var keep_pace := minf(peel / maxf(cos(theta), 0.35), DRIVE_CAP * v_trim) * lerpf(SHOULDER_PACE, 1.0, push)
+	var want_v := keep_pace + clampf(tuning.drive_reach * (want_d - d), -0.4 * peel, 0.8 * peel) * push
+	var along := smoothstep(ALONG_FROM, ALONG_FULL, cos(theta))
 	# (it brakes gently, so speed he has earned by diving or pumping is not taken straight back)
-	var a_drive := clampf(tuning.drive_gain * (want_v - v) * (1.0 if want_v > v else 0.3), -tuning.max_drive, tuning.max_drive)
+	var a_drive := clampf(tuning.drive_gain * (want_v - v) * (1.0 if want_v > v else 0.3), -tuning.max_drive, tuning.max_drive) * along * push * push
 	v = clampf(v + (a_slope + a_drag + a_pump + a_drive) * delta, v_min, v_max)
 	speed = clampf(remap(v, v_min, v_max, 0.0, 1.0), 0.0, 1.0)
 
-	# Move along the wave: ahead of the peel point while faster than the curl, up the face by the heading's rise.
-	var new_d := clampf(d + (v * cos(theta) - peel) * delta, D_NEAR, D_FAR)
-	var new_u := clampf(u + ((v * sin(theta) * sin_phi + draw) / face_h) * delta, U_LOW, U_HIGH)
+	# Move along the wave: ahead of the peel point while faster than the curl, up the face by the heading's rise. Closing
+	# on the curl is soft-limited (BACK_MAX) and eases to a stop near the end of the range, as does running out to the far
+	# end of the shoulder, so he never slams into either. The top and the bottom of the face take him softly (the lip
+	# carries a board along it), so a climb never stops dead, and in a snap the lip holds the tail until the nose is round.
+	var run := v * cos(theta) - peel
+	if run < 0.0:
+		var back_max := BACK_MAX * peel
+		run = -back_max * tanh(-run / back_max) * clampf((d - D_NEAR) / CURL_CUSHION, 0.0, 1.0)
+	else:
+		run *= clampf((D_FAR - d) / FAR_CUSHION, 0.0, 1.0)
+	var new_d := clampf(d + run * delta, D_NEAR, D_FAR)
+	var rise := (v * sin(theta) * sin_phi + draw) / face_h
+	rise *= clampf((U_HIGH - u) / FACE_CUSHION, 0.0, 1.0) if rise > 0.0 else clampf((u - U_LOW) / FACE_CUSHION, 0.0, 1.0)
+	_lip_hold = lerpf(_lip_hold, 1.0 if snapping else 0.0, 1.0 - exp(-delta / LIP_HOLD_TIME))
+	if rise < 0.0:
+		rise *= 1.0 - _lip_hold
+	var new_u := clampf(u + rise * delta, U_LOW, U_HIGH)
 	vel_d = (new_d - d) / delta
 	vel_u = (new_u - u) / delta
 	d = new_d
 	u = new_u
-	rail_roll = clampf(omega * v * 0.038, -0.78, 0.78)
+
+	# Balance: what he stands against is the board's acceleration minus gravity. Along the board that is the water's drag
+	# and his own pumping (gravity along the slope, and the wave's drive that stands in for it, move his body and the
+	# board alike, so they do not tilt him), across it the turn against the slope, and up through the deck the press.
+	# His centre of mass sits over his feet along it: a hard turn's drag puts him back over the tail.
+	_push_along = lerpf(_push_along, a_drag + a_pump, 1.0 - exp(-delta / LOAD_SMOOTHING))
+	pitch = clampf(atan2(_push_along, press), -PITCH_MAX, PITCH_MAX)
+	var felt := f * press * tan(pitch) + s * (v * carve_omega + g * s.y) + n * press
+	# With hardly any press under the board (gravity nearly all along a near-vertical face) the felt pull is tiny, so his
+	# body is free to stay near upright while the board goes vertical under him (J-Bay, 15.4 to 18.6 s).
+	var weightless := maxf(clampf(1.0 - (g * n.y + _press_curve) / (MIN_PRESS * g), 0.0, 1.0), _lip_hold)
+	balance = felt.normalized().lerp(Vector3.UP, LIGHT_UPRIGHT * weightless).normalized()
+	load_g = lerpf(load_g, felt.length() / g, 1.0 - exp(-delta / LOAD_SMOOTHING))
+	# The board rolls onto its rail by part of the lean that turns him, and a little onto its uphill rail to hold the line;
+	# his knees and ankles take the rest, never more than a body can bend.
+	var rail := tuning.rail_share * carve + tuning.trim_rail * hold
+	rail = clampf(rail, lean - tuning.body_tilt_max, lean + tuning.body_tilt_max)
+	rail_roll = clampf(rail, -tuning.rail_max, tuning.rail_max)
+	tuck = near_curl
+	_update_crouch(delta, model, tuning)
+	# The spray leaves the tail off the outside of the turn (the rail pushes the water away from the turn's centre), back
+	# along the board and up off the face; snapping off the lip it goes up and back over the crest.
+	lip_hit = smoothstep(0.68, 0.9, u) * clampf(-omega / 1.5, 0.0, 1.0)
+	var outward := -signf(omega) * clampf(absf(omega) / 0.6, 0.0, 1.0) * s
+	spray_dir = (-0.45 * f + 0.85 * outward + (0.35 + 0.65 * lip_hit) * n).normalized()
+	spray_dir = spray_dir.lerp(LIP_SPRAY_DIR.normalized(), lip_hit * 0.75).normalized()
+	_update_strain(delta)
 
 	# Sharpness: how hard the board is turning, held a moment so a snap throws spray and a wobble does not.
 	sharpness = maxf(clampf(absf(omega) / OMEGA_FULL, 0.0, 1.0), sharpness)
@@ -187,6 +533,74 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	_update_move(model, peel)
 
 
+## The hips. He sinks with speed, in the tube and as he points down the face (getting ready to load the bottom turn), and
+## on top of that follows the rhythm of the load: he folds as the board goes light (cresting the face), as the curve at
+## the foot of the face pushes up into him and through the first half of a turn (he absorbs it), and extends through the
+## second half as the nose comes up (he pushes through it). So he is deepest, head down by his hips, in the heart of a
+## bottom turn and tallest as he comes out of it, which is the rhythm of the footage, and the same rhythm pumps a board.
+func _update_crouch(delta: float, model: WaveModel, tuning: TuningData) -> void:
+	var rising := smoothstep(-0.3, 0.3, theta)
+	var folding := clampf(1.0 - load_g, 0.0, 1.0) + 0.6 * maxf(_press_curve, 0.0) / tuning.g_eff + _turning_g * (0.5 * (1.0 - rising) - rising)
+	_load_rhythm += (tuning.crouch_rhythm * folding - _load_rhythm / tuning.crouch_memory) * delta
+	_load_rhythm = clampf(_load_rhythm, -0.3, 0.45)
+	# (he sinks as he drops down the face, not just for pointing down it: run along the bottom, he comes back up)
+	var dropping := clampf(-theta / 0.9, 0.0, 1.0) * clampf(-vel_u / DROP_SINK_RATE, 0.0, 1.0)
+	# Round in a cutback he is very compact, knees almost touching; pumping, he folds as the nose goes down the face.
+	var round_back := clampf((-theta - 1.7) / 0.6, 0.0, 1.0)
+	var pump_fold := PUMP_CROUCH * pumping * -sin(_pump_phase)
+	var target_crouch := clampf(0.15 + 0.2 * speed + 0.45 * dropping + 0.35 * round_back + pump_fold + _load_rhythm + model.barrel_amount_at(d, u) * 0.65 + TUCK_CROUCH * tuck, 0.05, 1.0)
+	compression_vel += (COMPRESSION_K * (target_crouch - compression) - COMPRESSION_D * compression_vel) * delta
+	compression = clampf(compression + compression_vel * delta, 0.0, 1.0)
+
+
+## Debug: how far the input asks for more than a body can do. The surfer never falls (that would punish), but this says
+## when a real one would have: his centre of mass far behind where the input wants it, the input swinging the wanted
+## lean faster than a body moves, or more load than legs hold.
+func _update_strain(delta: float) -> void:
+	_lean_asked_rate = lerpf(_lean_asked_rate, absf(_lean_asked - _lean_asked_prev) / delta, 1.0 - exp(-delta / 0.12))
+	_lean_asked_prev = _lean_asked
+	var lag := absf(_lean_target - lean) / STRAIN_LAG
+	var swing := _lean_asked_rate / STRAIN_RATE
+	var heavy := load_g / STRAIN_LOAD
+	strain = maxf(lag, maxf(swing, heavy))
+	strain_reason = "lean far behind the input" if strain == lag else ("input too jerky" if strain == swing else "too many g")
+	if strain > 1.0 and not _straining:
+		falls += 1
+		fall_reason = strain_reason
+	_straining = strain > (0.8 if _straining else 1.0)
+
+
+## Hitting the lip: at the top of the face, with the nose up or along it, a reversal toward down the face commits to a
+## snap. The lip holds the tail while the board pivots round on it, so the whole turn happens at the top; he lets go and
+## drops once the nose is nearly where it was going. Once started it carries through: a snap cannot be taken back halfway.
+func _update_snap(at_lip: float, target: float) -> void:
+	if not snapping:
+		snapping = at_lip > 0.3 and theta > SNAP_HEADING and target - theta < -SNAP_START and not cutting_back
+		_snap_to = minf(target, -SNAP_DOWN)
+	elif theta < _snap_to + SNAP_RELEASE or cutting_back or u < LIP_FROM - 0.2:
+		snapping = false
+	else:
+		_snap_to = minf(_snap_to, target)  # (a push still building can take it further round, never back)
+
+
+## The cutback: out on the shoulder, a hard push down high on the face lets the turn carry on round toward the curl; once
+## he is round or meets the foam, the water pivots the board back toward the line; once his heading is back above
+## CUT_DONE he rides on as usual.
+func _update_cutback(push: float) -> void:
+	if not cutting_back:
+		if u > CUT_FROM and d > CUT_ROOM and _stick < CUT_PUSH and push < CUT_SHOVE:
+			cutting_back = true
+			_rebounding = false
+			snapping = false
+		return
+	# (he sees the foam coming: the rebound starts early enough to finish before he gets there)
+	if theta < CUT_TURNED or u < 0.15 or d + minf(vel_d, 0.0) * REBOUND_TIME * 1.5 < CUT_FOAM:
+		_rebounding = true
+	if _rebounding and theta > CUT_DONE:
+		cutting_back = false
+		_rebounding = false
+
+
 ## The strength of a spray that should be thrown now, 0 to 1, or 0 for none. Asking clears it.
 func take_burst() -> float:
 	var strength := _pending_burst
@@ -194,11 +608,16 @@ func take_burst() -> float:
 	return strength
 
 
+## A burst as a turn starts to throw water, and a bigger one each time it bites harder (SPRAY_STEP), so the biggest comes
+## at the peak of the turn, the snap at the lip, instead of being locked out by the first one.
 func _update_spray(delta: float, tuning: TuningData) -> void:
 	_burst_ready_in = maxf(_burst_ready_in - delta, 0.0)
-	var power := speed * sharpness
-	if _burst_ready_in <= 0.0 and power > tuning.spray_threshold:
-		_pending_burst = clampf(power * BURST_POWER, 0.0, 1.0)
+	if _burst_ready_in <= 0.0:
+		_last_burst = 0.0
+	var power := speed * sharpness * (1.0 + LIP_SPRAY * lip_hit)
+	if power > tuning.spray_threshold and power > _last_burst + (SPRAY_STEP if _last_burst > 0.0 else 0.0):
+		_pending_burst = maxf(_pending_burst, clampf(power * BURST_POWER, 0.0, 1.0))
+		_last_burst = power
 		_burst_ready_in = tuning.spray_pause
 
 
@@ -207,14 +626,14 @@ func _update_move(model: WaveModel, peel: float) -> void:
 	var seen := "trim"
 	if model.barrel_amount_at(d, u) > 0.5 and compression > 0.5:
 		seen = "barrel"
-	elif u > 0.72 and theta > 0.65 and omega < -1.8:
+	elif snapping or (u > 0.72 and theta > 0.65 and omega < -1.8):
 		seen = "hit_the_lip"
+	elif cutting_back:
+		seen = "cutback"
 	elif u > 0.9 and absf(theta) < 0.35:
 		seen = "floater"
 	elif u < 0.45 and omega > 1.0 and v > 0.65 * peel:
 		seen = "bottom_turn"
-	elif u > 0.5 and omega < -1.2 and d > 3.5:
-		seen = "cutback"
 	elif u > 0.55 and omega < -1.1:
 		seen = "top_turn"
 	# A move label stays a moment once seen, so it does not flicker.

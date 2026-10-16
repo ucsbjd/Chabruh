@@ -50,7 +50,8 @@ void vertex() {
 
 	// One cycle: lifted (the lip stands up and pitches), thrown (out over the trough), landed (it has
 	// fallen into the foam), then lifted again. The phase slides along the crest, so at any moment
-	// the lips along the wave are at different points in the cycle.
+	// the lips along the wave are at different points in the cycle. WaveStage.lip_morph() repeats the lift and fall for
+	// things that sit on the face (the carve trail), so change them together.
 	float phase = fract(time / lip_period + d / lip_spacing);
 	float lift = (smoothstep(0.86, 1.0, phase) + 1.0 - smoothstep(0.0, 0.28, phase)) * lip_here;
 	float fall = smoothstep(0.50, 0.66, phase) * (1.0 - smoothstep(0.74, 0.92, phase)) * lip_here;

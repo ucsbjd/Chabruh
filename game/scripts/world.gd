@@ -44,6 +44,20 @@ const WAKE_DRIFT_FACTOR := 1.7
 const TEST_BURSTS: Array[float] = [0.15, 0.4, 0.7, 1.0]
 ## With ?autoburst in the URL (for a phone, which has no S key) a test burst is thrown this often, in seconds.
 const AUTO_BURST_EVERY := 2.4
+## The , and . keys slow everything down or speed it up (the ride, the wave, the spray), in these steps and limits.
+const GAME_SPEED_STEP := 0.1
+const GAME_SPEED_MIN := 0.5
+const GAME_SPEED_MAX := 2.5
+## At the top of the wave (above this height up the face) a turn also throws a fan off the front of the board, where
+## the front foot drives the rail through the lip, this strong relative to the tail's.
+const FRONT_SPRAY_FROM := 0.6
+const FRONT_SPRAY_SHARE := 1.1
+## The spray leaves the tail the way the rider throws it (off the outside of the turn, up over the crest at the lip): the
+## direction is projected this many meters out to find its angle on screen, which stays between these angles (degrees,
+## 0 is right, negative is up), so it never fires down into the face.
+const SPRAY_PROBE := 1.5
+const SPRAY_ANGLE_UP := -165.0
+const SPRAY_ANGLE_DOWN := 20.0
 
 var _time := 0.0
 var _travel := 0.0
@@ -64,6 +78,8 @@ var _calibration: Calibration
 var _key_help := Label.new()
 var _surfer3d: Surfer3D
 var _readout := Label.new()
+var _speed_label := Label.new()  # the game speed, always on screen so it shows in screenshots
+var _front_spray := SurferSpray.new()
 var _pose_index := SurferSprites.ORDER.find(DEFAULT_POSE)
 var _test_burst := 0
 var _auto_burst_in := AUTO_BURST_EVERY
@@ -86,8 +102,24 @@ func _init() -> void:
 	add_child(_ride_input)
 
 
+func _notification(what: int) -> void:
+	# The labels and the second fan are attached in _ready; a scene freed before that must free them itself.
+	if what == NOTIFICATION_PREDELETE:
+		for orphan: Node in [_key_help, _readout, _speed_label, _front_spray]:
+			if is_instance_valid(orphan) and orphan.get_parent() == null:
+				orphan.free()
+
+
 func _ready() -> void:
 	_add_key_help()
+	# The second fan, off the front foot, sits with the tail's fan in front of the surfer.
+	add_child(_front_spray)
+	move_child(_front_spray, _spray.get_index() + 1)
+	_front_spray.set_wake(0.0)
+	var url_speed := UrlParams.get_value("speed")
+	if url_speed.is_valid_float():
+		Engine.time_scale = clampf(url_speed.to_float(), GAME_SPEED_MIN, GAME_SPEED_MAX)
+	_show_game_speed()
 	_set_surfer_3d(not UrlParams.has("sprite"))  # the real-time surfer is the default; ?sprite or the 3 key brings the sprite back
 	for child in get_children():
 		if child is RidgeLayer:
@@ -98,6 +130,7 @@ func _ready() -> void:
 	for material in _stage.materials():
 		_register(material)
 	_register(_surfer.toon_material)
+	_stage.carve_trail.draw_speed = _tuning.v_draw_base
 	_auto_burst = UrlParams.has("autoburst")
 	if UrlParams.has("calibrate"):
 		_calibration = Calibration.new()
@@ -119,7 +152,11 @@ func _process(delta: float) -> void:
 	_read_held_keys(delta)
 	rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), _stage.model, _tuning)
 	if _readout.visible:
-		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f" % [rider.move, rider.v, roundi(rad_to_deg(rider.theta)), rider.omega, rider.compression]
+		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f   lean %d deg   load %.1f g   stall %.1f
+%s" % [
+			rider.move, rider.v, roundi(rad_to_deg(rider.theta)), rider.omega, rider.compression, roundi(rad_to_deg(rider.carve)), rider.load_g,
+			rider.stall, _balance_note()]
+		_readout.modulate = Color(1.0, 0.55, 0.5, 0.9) if rider.strain > 1.0 else Color(1, 1, 1, 0.6)
 	var strength := rider.take_burst()
 	if strength > 0.0:
 		burst(strength)
@@ -132,6 +169,7 @@ func _process(delta: float) -> void:
 		ridge.place(_travel, size.y, _crop)
 	_place_surfer_and_spray()
 	_wave_spray.update(_stage, _time)
+	_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.speed * rider.sharpness, _time)
 	if _auto_burst:
 		_auto_burst_in -= delta
 		if _auto_burst_in <= 0.0:
@@ -163,10 +201,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and not event.echo and event.keycode == KEY_H:
 			_key_help.visible = not _key_help.visible
 			_readout.visible = _key_help.visible
+		elif event.pressed and (event.keycode == KEY_COMMA or event.keycode == KEY_PERIOD):
+			var step := GAME_SPEED_STEP if event.keycode == KEY_PERIOD else -GAME_SPEED_STEP
+			Engine.time_scale = clampf(snappedf(Engine.time_scale + step, GAME_SPEED_STEP), GAME_SPEED_MIN, GAME_SPEED_MAX)
+			_show_game_speed()
 	# A double click or double tap changes the mood (touches arrive as emulated mouse clicks).
 	elif event is InputEventMouseButton:
 		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
 			Palette.cycle()
+
+
+## Debug: whether the input is one a real surfer could ride. He never falls here, but the readout says when he would.
+func _balance_note() -> String:
+	var note := "balance ok" if rider.strain <= 1.0 else "a real surfer would fall: " + rider.strain_reason
+	return "%s   (strain %.1f, %d times so far)" % [note, rider.strain, rider.falls]
 
 
 ## Sets the wave's size and hollowness (both 0 to 1) and how far ahead of the peel point, in
@@ -185,11 +233,40 @@ func _place_rider(meters_ahead: float) -> void:
 	_ride_input.steer = Rider.steer_for(meters_ahead)
 	_ride_input.height = RideInput.REST_HEIGHT
 	rider.place(meters_ahead, Rider.u_for(RideInput.REST_HEIGHT))
+	_stage.carve_trail.clear()
 
 
 ## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). The rider calls this from the riding.
 func burst(strength: float) -> void:
-	_spray.burst(strength)
+	var tail := _surfer3d.tail_point() if _surfer3d else Vector3.ZERO
+	_spray.burst(strength, _spray_angle(tail))
+	# At the top of the wave the front foot drives the rail through the lip and throws its own, bigger fan.
+	var top := smoothstep(FRONT_SPRAY_FROM, 0.85, rider.u)
+	if top > 0.05:
+		var front := _surfer3d.front_foot_point() if _surfer3d else Vector3.ZERO
+		_front_spray.burst(clampf(strength * FRONT_SPRAY_SHARE * top, 0.0, 1.0), _spray_angle(front))
+
+
+## Which way on screen the spray leaves a point on the board (degrees, 0 right, negative up), from the way the rider
+## throws it. The sprite surfer has no board in the 3D stage, so its spray keeps the fan's usual angle.
+func _spray_angle(from: Vector3) -> float:
+	if _surfer3d == null:
+		return SurferSpray.FAN_CENTRE
+	var a := _stage.project(from)
+	var b := _stage.project(from + rider.spray_dir * SPRAY_PROBE)
+	if a.distance_to(b) < 1.0:
+		return SurferSpray.FAN_CENTRE
+	var angle := rad_to_deg((b - a).angle())
+	# (pointing down and to the left, the nearest allowed angle is up and to the left, round the other way)
+	if angle > SPRAY_ANGLE_DOWN:
+		return SPRAY_ANGLE_UP if angle > 90.0 + SPRAY_ANGLE_DOWN * 0.5 else SPRAY_ANGLE_DOWN
+	return maxf(angle, SPRAY_ANGLE_UP)
+
+
+## Shows the game speed in the corner and in the key list.
+func _show_game_speed() -> void:
+	_speed_label.text = "game speed %.1fx" % Engine.time_scale
+	_key_help.text = _key_help_text()
 
 
 ## Temporary: the next of the rising test strengths, so each fan can be judged (B key, or ?autoburst on a phone).
@@ -218,6 +295,9 @@ func _place_surfer_and_spray() -> void:
 	_surfer.place(feet_px, feet_px.y - head_px.y)
 	if _surfer3d:
 		_surfer3d.follow(rider, model, get_process_delta_time())
+		_spray.set_hand_drag(_stage.project(_surfer3d.hand_spray_point), _surfer3d.hand_spray)
+	else:
+		_spray.set_hand_drag(Vector2.ZERO, 0.0)
 	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
 	var ahead_px := _stage.project(model.surface_point(rider.d + 0.6, rider.u))
 	var behind_px := _stage.project(model.surface_point(rider.d - 0.6, rider.u))
@@ -225,7 +305,13 @@ func _place_surfer_and_spray() -> void:
 	_surfer.set_ground_angle(clampf(slope, -MAX_GROUND_ANGLE, MAX_GROUND_ANGLE))
 
 	var pixels_per_meter := (feet_px.y - head_px.y) / WaveModel.SURFER_HEIGHT
-	_spray.follow(feet_px + (BOARD_TAIL * pixels_per_meter).rotated(_surfer.rotation), pixels_per_meter, TRAVEL_SPEED * size.y * WAKE_DRIFT_FACTOR)
+	var drift := TRAVEL_SPEED * size.y * WAKE_DRIFT_FACTOR
+	if _surfer3d:  # off the real board: its tail, and the front foot
+		_spray.follow(_stage.project(_surfer3d.tail_point()), pixels_per_meter, drift)
+		_front_spray.follow(_stage.project(_surfer3d.front_foot_point()), pixels_per_meter, drift)
+	else:
+		_spray.follow(feet_px + (BOARD_TAIL * pixels_per_meter).rotated(_surfer.rotation), pixels_per_meter, drift)
+		_front_spray.follow(feet_px, pixels_per_meter, drift)
 
 
 ## Temporary: - and = change the wave's size, [ and ] its hollowness. (The arrow keys and WASD ride.)
@@ -240,9 +326,7 @@ func _read_held_keys(delta: float) -> void:
 
 ## A faint key list in the lower left for testing. H hides it.
 func _add_key_help() -> void:
-	_key_help.text = "\n".join([
-		"1   bottom turn (3D: toggle)", "2   crouch (3D only, toggle)", "3   3D surfer on / off",
-		"P   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow", "H   hide this"])
+	_key_help.text = _key_help_text()
 	_key_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_key_help.modulate = Color(1, 1, 1, 0.6)
 	_key_help.add_theme_font_size_override("font_size", 15)
@@ -250,7 +334,7 @@ func _add_key_help() -> void:
 	_key_help.add_theme_constant_override("outline_size", 5)
 	_key_help.add_theme_constant_override("line_spacing", -4)
 	_key_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	_key_help.position += Vector2(14.0, -170.0)
+	_key_help.position += Vector2(14.0, -190.0)
 	add_child(_key_help)
 	_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_readout.modulate = Color(1, 1, 1, 0.6)
@@ -259,6 +343,21 @@ func _add_key_help() -> void:
 	_readout.add_theme_constant_override("outline_size", 5)
 	_readout.position = Vector2(14.0, 44.0)
 	add_child(_readout)
+	_speed_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speed_label.modulate = Color(1, 1, 1, 0.6)
+	_speed_label.add_theme_font_size_override("font_size", 15)
+	_speed_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_speed_label.add_theme_constant_override("outline_size", 5)
+	_speed_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_speed_label.position += Vector2(-150.0, 14.0)
+	add_child(_speed_label)
+
+
+func _key_help_text() -> String:
+	return "\n".join([
+		"1   bottom turn (3D: toggle)", "2   crouch (3D only, toggle)", "3   3D surfer on / off",
+		"P   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow",
+		", .   game speed (%.1fx)" % Engine.time_scale, "H   hide this"])
 
 
 ## Swaps the sprite surfer for the real-time one that lives inside the wave's 3D stage (or back).
@@ -267,6 +366,7 @@ func _set_surfer_3d(on: bool) -> void:
 		_surfer3d = Surfer3D.new()
 		_stage.add_actor(_surfer3d)
 		_register(_surfer3d.material)
+		_register(_surfer3d.veil)
 		_apply_mood()
 	elif not on and _surfer3d != null:
 		_surfer3d.queue_free()
@@ -313,6 +413,7 @@ func _apply_mood() -> void:
 	for ridge in _ridges:
 		ridge.apply_mood(mood)
 	_spray.apply_mood(mood)
+	_front_spray.apply_mood(mood)
 	_wave_spray.apply_mood(mood)
 
 

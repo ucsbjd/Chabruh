@@ -6,6 +6,7 @@ extends Node2D
 ##
 ## One call drives it: `burst(strength)`, strength 0 to 1. Step 6 sets that from speed times how
 ## sharply the surfer turns. A gentle burst is a small low flick; a full one is the signature fan.
+## `set_hand_drag()` adds the thin sheet a hand throws up when it drags through the face in a big bottom turn.
 ##
 ## Layers: this node sits just after the Surfer in the scene, so its droplets fly in front of them;
 ## the heavy body of the fan and the wake live in a second layer that is moved to just before the
@@ -29,11 +30,17 @@ const FAN_AMOUNT_FULL := 190
 const EDGE_AMOUNT_FULL := 90
 const CORE_AMOUNT_FULL := 8
 const SPLASH_AMOUNT_FULL := 110
-const DRAG := Vector2(0.7, 1.3)      # velocity falls off like this per second, so droplets thin out with range
+## Air drag, meters per second of speed lost each second (Godot's particle damping is a fixed loss of speed per second,
+## in pixels, so it is scaled by the surfer's size on screen): the slow droplets hang near the tail while the fast ones
+## fly on, so the fan thins out with range.
+const DRAG := Vector2(1.0, 2.0)
 const GRAVITY_METERS := 6.0          # a little less than real, so the arcs stay open
 const DROPLET_SCALE := 0.8           # droplet size relative to the surfer's scale
 const WAKE_AMOUNT := 36
 const WAKE_LIFETIME := 1.6
+const HAND_AMOUNT := 40
+const HAND_LIFETIME := 0.45
+const HAND_SPEED := Vector2(1.4, 3.2)  # meters per second, up and back from the fingers
 ## Pixels per meter the textures were drawn for; particle scales are relative to this.
 const REFERENCE_PIXELS_PER_METER := 104.0
 
@@ -45,6 +52,7 @@ var _edges: Array[CPUParticles2D] = []
 var _cores: Array[CPUParticles2D] = []
 var _splash: CPUParticles2D
 var _wake: CPUParticles2D
+var _hand: CPUParticles2D
 var _droplet := SprayTextures.droplet()
 var _blob := SprayTextures.blob()
 var _sheet := SprayTextures.sheet()
@@ -64,6 +72,8 @@ func _init() -> void:
 	_splash = _make_emitter(self, _droplet)
 	_wake = _make_emitter(_back, _sheet)
 	_setup_wake()
+	_hand = _make_emitter(self, _droplet)
+	_setup_hand()
 	add_child(_back)
 
 
@@ -84,8 +94,9 @@ func _place_back_layer() -> void:
 	parent.move_child(_back, at)
 
 
-## Throws a fan of spray off the board's tail. `strength` is 0 (a small flick) to 1 (the full fan).
-func burst(strength: float) -> void:
+## Throws a fan of spray off the board's tail. `strength` is 0 (a small flick) to 1 (the full fan); `centre_degrees` is
+## the way it goes on screen (0 is right, negative is up), off the outside of the turn.
+func burst(strength: float, centre_degrees := FAN_CENTRE) -> void:
 	var s := clampf(strength, 0.0, 1.0)
 	var half_width := lerpf(FAN_HALF_WIDTH_GENTLE, FAN_HALF_WIDTH_FULL, pow(s, 0.7))
 	var speeds := FAN_SPEED_GENTLE.lerp(FAN_SPEED_FULL, s)
@@ -94,9 +105,9 @@ func burst(strength: float) -> void:
 	_next += 1
 	var size_scale := DROPLET_SCALE * _pixels_per_meter / REFERENCE_PIXELS_PER_METER
 
-	_fire(_fans[index], int(lerpf(FAN_AMOUNT_GENTLE, FAN_AMOUNT_FULL, s)), life, half_width, speeds, size_scale)
-	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s)), life * 0.9, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
-	_fire(_cores[index], int(lerpf(2.0, CORE_AMOUNT_FULL, s)), life * 0.6, half_width * 0.8, speeds * 0.5, size_scale * 1.1)
+	_fire(_fans[index], int(lerpf(FAN_AMOUNT_GENTLE, FAN_AMOUNT_FULL, s)), life, centre_degrees, half_width, speeds, size_scale)
+	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s)), life * 0.9, centre_degrees, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
+	_fire(_cores[index], int(lerpf(2.0, CORE_AMOUNT_FULL, s)), life * 0.6, centre_degrees, half_width * 0.8, speeds * 0.5, size_scale * 1.1)
 
 
 ## A splash round the board, for a landing after an air, `strength` 0 to 1.
@@ -116,6 +127,16 @@ func set_wake(amount: float) -> void:
 		_wake.amount = wanted
 
 
+## A hand dragged through the face throws a thin sheet of droplets up and back. `at` is the hand on screen (in the
+## parent's pixels) and `amount` 0 (none) to 1.
+func set_hand_drag(at: Vector2, amount: float) -> void:
+	_hand.position = at - position
+	var wanted := int(HAND_AMOUNT * clampf(amount, 0.0, 1.0))
+	_hand.emitting = wanted > 0
+	if wanted > 0 and wanted != _hand.amount:
+		_hand.amount = wanted
+
+
 ## Puts the spray on the board's tail. `tail` is in the parent's pixels, `pixels_per_meter` is the
 ## surfer's on-screen scale, and `drift` is how fast the water slides past, in pixels per second.
 func follow(tail: Vector2, pixels_per_meter: float, drift: float) -> void:
@@ -125,11 +146,18 @@ func follow(tail: Vector2, pixels_per_meter: float, drift: float) -> void:
 	var gravity := Vector2(0.0, GRAVITY_METERS * pixels_per_meter)
 	for emitter in _all_emitters():
 		emitter.gravity = gravity if emitter != _wake else Vector2.ZERO
+		if emitter != _wake:
+			emitter.damping_min = DRAG.x * pixels_per_meter
+			emitter.damping_max = DRAG.y * pixels_per_meter
 	_wake.initial_velocity_min = drift * 0.9
 	_wake.initial_velocity_max = drift * 1.25
 	_wake.scale_amount_min = 0.45 * pixels_per_meter / REFERENCE_PIXELS_PER_METER
 	_wake.scale_amount_max = 0.95 * pixels_per_meter / REFERENCE_PIXELS_PER_METER
 	_wake.emission_rect_extents = Vector2(0.25, 0.05) * pixels_per_meter
+	_hand.initial_velocity_min = HAND_SPEED.x * pixels_per_meter
+	_hand.initial_velocity_max = HAND_SPEED.y * pixels_per_meter
+	_hand.scale_amount_min = 0.25 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
+	_hand.scale_amount_max = 0.55 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
 
 
 ## Tints the spray from the mood: cream and peach where the sun lands, violet as the droplets fall into shade.
@@ -152,7 +180,7 @@ func live_particles() -> int:
 	var total := 0
 	var now := Time.get_ticks_msec()
 	for emitter in _all_emitters():
-		if emitter == _wake:
+		if emitter == _wake or emitter == _hand:
 			total += emitter.amount if emitter.emitting else 0
 		elif now < int(emitter.get_meta("dies_at", 0)):
 			total += emitter.amount
@@ -166,6 +194,7 @@ func _all_emitters() -> Array[CPUParticles2D]:
 	all.append_array(_cores)
 	all.append(_splash)
 	all.append(_wake)
+	all.append(_hand)
 	return all
 
 
@@ -180,8 +209,8 @@ func _make_emitter(layer: Node2D, texture: Texture2D) -> CPUParticles2D:
 	emitter.emission_shape = CPUParticles2D.EMISSION_SHAPE_DIRECTED_POINTS
 	emitter.direction = Vector2.RIGHT
 	emitter.spread = 2.0
-	emitter.damping_min = DRAG.x
-	emitter.damping_max = DRAG.y
+	emitter.damping_min = DRAG.x * REFERENCE_PIXELS_PER_METER
+	emitter.damping_max = DRAG.y * REFERENCE_PIXELS_PER_METER
 	emitter.scale_amount_curve = _fall_off
 	emitter.color_ramp = _gradient
 	emitter.lifetime = 1.0
@@ -206,11 +235,23 @@ func _setup_wake() -> void:
 	_wake.emitting = true
 
 
+## A steady stream, up and back from the fingers (he rides toward the left), off until a hand drags.
+func _setup_hand() -> void:
+	_hand.one_shot = false
+	_hand.explosiveness = 0.0
+	_hand.amount = HAND_AMOUNT
+	_hand.lifetime = HAND_LIFETIME
+	_hand.emission_shape = CPUParticles2D.EMISSION_SHAPE_POINT
+	_hand.direction = Vector2(0.55, -1.0)
+	_hand.spread = 24.0
+	_hand.emitting = false
+
+
 ## Sets up one fan emitter for a burst and starts it.
-func _fire(emitter: CPUParticles2D, amount: int, life: float, half_width: float, speeds: Vector2, droplet_scale: float) -> void:
+func _fire(emitter: CPUParticles2D, amount: int, life: float, centre_degrees: float, half_width: float, speeds: Vector2, droplet_scale: float) -> void:
 	if amount <= 0:
 		return
-	_set_fan_points(emitter, FAN_CENTRE, half_width)
+	_set_fan_points(emitter, centre_degrees, half_width)
 	_fire_with_points(emitter, amount, life, speeds, droplet_scale)
 
 

@@ -41,10 +41,19 @@ func face_point(u: float) -> Vector2:
 	return points[face_from + index].lerp(points[face_from + index + 1], position - index)
 
 
-## The outward (into the air) unit normal of the face at `u`.
+## The outward (into the air) unit normal of the face at `u`. It blends from one outline point's normal to the next, so it
+## turns smoothly as a board rides up or down the face instead of jumping at every point (which tipped the board and
+## jolted the balance).
 func face_normal(u: float) -> Vector2:
 	var count := face_to - face_from
 	var position := (1.0 - clampf(u, 0.0, 1.0)) * count
 	var index := mini(int(position), count - 1)
-	var along := points[face_from + index + 1] - points[face_from + index]
+	return _point_normal(face_from + index).lerp(_point_normal(face_from + index + 1), position - index).normalized()
+
+
+## The normal at an outline point: between the normals of the segments on either side of it.
+func _point_normal(index: int) -> Vector2:
+	var before := points[maxi(index - 1, face_from)]
+	var after := points[mini(index + 1, face_to)]
+	var along := after - before
 	return Vector2(-along.y, along.x).normalized()

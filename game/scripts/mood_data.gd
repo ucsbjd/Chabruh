@@ -50,6 +50,9 @@ extends Resource
 @export var surfer_light := Color.BLACK
 @export var surfer_shade := Color.BLACK
 @export var surfer_rim := Color.BLACK
+## His figure seen through the lip curtain: dark teal on the side away from the sun, sunlit aqua toward it.
+@export var surfer_veil_deep := Color.BLACK
+@export var surfer_veil_lit := Color.BLACK
 
 @export_group("Foreground swell")
 @export var swell_top := Color.BLACK

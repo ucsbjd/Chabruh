@@ -4,7 +4,9 @@ render_mode unshaded, cull_back, depth_draw_opaque;
 // but the light bands come from the surface normal and the sun, and the rim from the view angle. Each vertex
 // carries its region number in the vertex colour (red = region / 10): 0 skin, 1 shorts, 2 board, 3 hair, 5 trim,
 // 6 and 7 the board's stripes. Because he is drawn inside the wave's own 3D stage, the lip and the mist can pass
-// in front of him.
+// in front of him. Where he is the nearest thing he marks the stencil, so the next pass (surfer_veil.gdshader) shows
+// his figure through the lip and nowhere else.
+stencil_mode write, compare_always, 1;
 
 uniform vec4 surfer_skin : source_color = vec4(0.85, 0.54, 0.38, 1.0);
 uniform vec4 surfer_shorts : source_color = vec4(1.0, 0.44, 0.38, 1.0);

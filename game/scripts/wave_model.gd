@@ -27,7 +27,16 @@ const PROFILE_WIDTH := 512
 
 const MIN_HEIGHT := 1.4              # wave height at size 0, about 0.8 surfers
 const MAX_HEIGHT := 4.4              # wave height at size 1, about 2.4 surfers
-const SHOULDER_FLOOR := 0.48         # what is left of the wall at the end of the shoulder, as a fraction of its height: it settles to about half, not to flat water
+const NEAR_TAPER := 0.15             # the wall eases down this much over the first NEAR_TAPER_LENGTH meters ahead of the break...
+const NEAR_TAPER_LENGTH := 16.0
+const SHOULDER_FLOOR := 0.3          # ...then, from about a third of the way down the shoulder, settles to this fraction of its height
+const SHOULDER_FROM := 5.0           # meters ahead of the peel point where the face starts to relax into the shoulder...
+const SHOULDER_SPAN := 0.75          # ...and the fraction of the shoulder's length by which it has fully relaxed
+const SHOULDER_CALM := 0.65          # how much weaker the water's draw up the face is once the shoulder has relaxed
+const SHOULDER_SLACK := 0.85         # how much of the wave's push is gone once the shoulder has relaxed
+const LIP_DRAW := 0.45               # how much harder the water draws up the top of the face where the lip is throwing
+const LOW_DRAW := 0.55               # the draw at the foot of the face, as a fraction of the draw in the middle
+const WHITEWATER_PUSH := 0.6         # the push left in the whitewater behind the break (the foam still shoves a board along)
 const COLLAPSE_LENGTH := 4.5         # distance behind the peel point over which the wall falls apart
 const WHITEWATER_HEIGHT := 0.16     # fraction of the wall left once it has collapsed into foam
 const PEAK_AT := 1.5                 # the highest point of the wave, just ahead of the peel point
@@ -48,7 +57,11 @@ const BARREL_THRESHOLD := 0.35       # how much barrel there must be for the tub
 
 # Cross-section proportions, as fractions of the wave height.
 const LIP_THICKNESS := 0.14          # at the crest, tapering to a thin tip
-const BARREL_RADIUS := 0.43          # inner radius of a full barrel
+const BARREL_RADIUS := 0.43          # inner radius of a full barrel, up and down
+## A real plunging lip throws out further than it is tall: the tube under it is close to an ellipse about 1.7 times wider
+## than high (New, 1983, "A class of elliptical free-surface flows"). A full barrel is this much wider than high, toward
+## the beach, so the lip pitches further out and the mouth opens as an almond; a shallow curl stays round.
+const BARREL_ASPECT := 1.4
 const BACK_RUN := 3.2                # how far back the gentle back slope runs
 const POINTS_BACK := 12
 const POINTS_OUTER := 16
@@ -104,11 +117,14 @@ func shoulder_length() -> float:
 	return lerpf(30.0, 46.0, size)
 
 
-## 1 at the peel point and behind it, easing down the shoulder until the wall has settled to about half its height.
+## 1 at the peel point and behind it. Down the line the wall first eases a little (the playable wall holds most of its
+## height, room for a cutback), then from about a third of the way down the shoulder it settles toward open swell.
 func taper_at(d: float) -> float:
 	if d <= 0.0:
 		return 1.0
-	return lerpf(1.0, SHOULDER_FLOOR, smoothstep(0.0, 1.0, d / shoulder_length()))
+	var near := NEAR_TAPER * smoothstep(0.0, NEAR_TAPER_LENGTH, d)
+	var far := (1.0 - NEAR_TAPER - SHOULDER_FLOOR) * smoothstep(shoulder_length() * 0.35, shoulder_length(), d)
+	return 1.0 - near - far
 
 
 ## 1 at the peel point and ahead of it, falling to WHITEWATER_HEIGHT behind and then to nothing.
@@ -137,9 +153,27 @@ func peak_at(d: float) -> float:
 	return 1.0 + PEAK_GAIN * exp(-x * x)
 
 
-## 0 on the wall and the pocket, rising to 1 far down the line: the shoulder, where the face relaxes.
+## 0 on the wall and the pocket, rising to 1 down the line: the shoulder, where the face relaxes, rounds over at the top
+## and runs longer and gentler to the trough, so it pushes a surfer along less.
 func shoulder_at(d: float) -> float:
-	return smoothstep(BUILD_LENGTH, shoulder_length(), d)
+	return smoothstep(SHOULDER_FROM, shoulder_length() * SHOULDER_SPAN, d)
+
+
+## How strongly the water on the face draws up toward the crest at (d, u), as a factor of the draw in the middle of the
+## face of a 2.5 m wave's pocket: it grows with the wave's height, is strongest in the pocket and up where the lip is
+## throwing (it holds a board at the lip), weaker low on the face, and calms down the shoulder as the face relaxes. This
+## is what lifts a surfer and so, pointed down the line, what drives him: the wave's power.
+func draw_at(d: float, u: float) -> float:
+	var size_factor := clampf(crest_height_at(d) / 2.5, 0.4, 1.3)
+	var calm := 1.0 - SHOULDER_CALM * shoulder_at(d)
+	var profile := lerpf(LOW_DRAW, 1.0, smoothstep(0.0, 0.35, u)) * (1.0 + LIP_DRAW * throw_at(d) * smoothstep(0.5, 0.9, u))
+	return size_factor * calm * profile
+
+
+## How much the wave pushes a surfer along at d, 0 to 1: all of it in the pocket by the peak, less down the shoulder as
+## the face shrinks and relaxes, and some still in the whitewater behind the break.
+func power_at(d: float) -> float:
+	return clampf(taper_at(d) * (1.0 - SHOULDER_SLACK * shoulder_at(d)) * lerpf(1.0, WHITEWATER_PUSH, whitewater_at(d)), 0.0, 1.0)
 
 
 ## How much of the wave has turned to whitewater at d, 0 to 1: nothing ahead of the break, all of it
@@ -203,8 +237,9 @@ func barrel_amount_at(at_d: float, at_u: float) -> float:
 ##
 ## It is built from simple curves: a gentle back slope, then an outer arc over the crest that is
 ## thrown forward into the lip, a thin tip, an inner arc back under the lip (the roof of the
-## barrel), and a concave face that curls down to the trough. A circle of radius r centred at
-## (r, y_a) gives both arcs, so a full barrel is a near-round tube whose floor is the water.
+## barrel), and a concave face that curls down to the trough. An ellipse of height r centred at
+## (r * aspect, y_a) gives both arcs, so a full barrel is an almond-shaped tube, wider than high
+## (barrel_aspect), whose floor is the water.
 func section(d: float) -> WaveSection:
 	return section_key(d, LipShape.THROWN)
 
@@ -224,7 +259,7 @@ func section_key(d: float, shape: LipShape) -> WaveSection:
 		LipShape.LANDED:
 			height_here *= 1.0 - LAND_DROP * activity
 			curl *= LAND_CURL
-	return section_for(height_here, curl, foam_here, trough)
+	return section_for(height_here, curl, foam_here, trough, shoulder_at(d))
 
 
 ## Where the foot of the wave is, in z. The face runs longer and gentler down the shoulder, and a
@@ -233,26 +268,27 @@ func trough_z_at(d: float) -> float:
 	var wave_h := maxf(crest_height_at(d), 0.03)
 	var curl := curl_at(d)
 	var run := wave_h * lerpf(2.0, 1.1, hollowness) * (1.0 + SHOULDER_RUN * shoulder_at(d))
-	return lerpf(run, curl * BARREL_RADIUS * wave_h, curl)
+	return lerpf(run, curl * BARREL_RADIUS * wave_h * barrel_aspect(curl), curl)
 
 
 ## The same cross-section for an explicit height (meters), curl and foam amount (both 0 to 1). A
-## negative `trough_override` lets the section place its own foot.
-func section_for(crest_meters: float, curl: float, foam_here: float, trough_override := -1.0) -> WaveSection:
+## negative `trough_override` lets the section place its own foot. `shoulder` (0 to 1, see shoulder_at) rounds the face.
+func section_for(crest_meters: float, curl: float, foam_here: float, trough_override := -1.0, shoulder := 0.0) -> WaveSection:
 	var result := WaveSection.new()
 	var wave_h := maxf(crest_meters, 0.03)
 
 	var thick := wave_h * lerpf(0.025, LIP_THICKNESS, pow(curl, 0.7))
 	var tip_thick := wave_h * 0.012
 	var radius := curl * BARREL_RADIUS * wave_h
+	var aspect := barrel_aspect(curl)
 	var centre_y := wave_h - radius - thick
-	var trough_z := trough_override if trough_override >= 0.0 else lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius, curl)
+	var trough_z := trough_override if trough_override >= 0.0 else lerpf(wave_h * lerpf(2.0, 1.1, hollowness), radius * aspect, curl)
 	var back_len := wave_h * BACK_RUN
 	var theta_start := deg_to_rad(105.0)
 	var theta_tip := deg_to_rad(lerpf(90.0, -40.0, curl))
 
 	# The back slope, rising gently to where the outer arc begins.
-	var arc_start := _arc_point(radius, centre_y, radius + thick, theta_start)
+	var arc_start := _arc_point(radius * aspect, centre_y, radius + thick, theta_start, aspect)
 	var arc_tangent := Vector2(sin(theta_start), -cos(theta_start))
 	var back_from := Vector2(-back_len, 0.0)
 	for i in POINTS_BACK:
@@ -266,7 +302,7 @@ func section_for(crest_meters: float, curl: float, foam_here: float, trough_over
 		var theta := lerpf(theta_start, theta_tip, t)
 		var thin := pow(1.0 - t, 0.8)
 		var arc_radius := radius + tip_thick + (thick - tip_thick) * thin
-		var p := _arc_point(radius, centre_y, arc_radius, theta)
+		var p := _arc_point(radius * aspect, centre_y, arc_radius, theta, aspect)
 		var tip_foam := smoothstep(0.55, 1.0, t) * curl
 		var index := result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), 0.0, 1.0 - thin * 0.8)
 		if p.y >= result.points[result.crest].y:
@@ -277,17 +313,20 @@ func section_for(crest_meters: float, curl: float, foam_here: float, trough_over
 	for i in POINTS_INNER:
 		var t := (i + 1) / float(POINTS_INNER)
 		var theta := lerpf(theta_tip, PI, t)
-		var p := _arc_point(radius, centre_y, radius, theta)
+		var p := _arc_point(radius * aspect, centre_y, radius, theta, aspect)
 		var tip_foam := (1.0 - smoothstep(0.0, 0.35, t)) * curl
 		result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), curl * lerpf(0.3, 1.0, t), 1.0 - t * 0.7)
 
-	# The face: concave, curling down to the trough. For a full barrel this is the tube's floor curve.
+	# The face: concave, curling down to the trough (for a full barrel this is the tube's floor curve). Down the shoulder
+	# it rounds over: convex at the top, easing into a gentle slope at the foot, like an unbroken swell.
 	var face_top := result.points[result.points.size() - 1]
 	var trough := Vector2(trough_z, 0.0)
+	var upper := face_top + Vector2(0.32 * trough_z * shoulder, -face_top.y * lerpf(0.5523, 0.22, shoulder))
+	var lower := Vector2(trough_z * (1.0 - lerpf(0.5523, 0.42, shoulder)), 0.08 * face_top.y * shoulder)
 	result.face_from = result.points.size() - 1
 	for i in POINTS_FACE:
 		var t := (i + 1) / float(POINTS_FACE)
-		var p := _bezier(face_top, face_top + Vector2(0.0, -face_top.y * 0.5523), trough - Vector2(trough_z * 0.5523, 0.0), trough, t)
+		var p := _bezier(face_top, upper, lower, trough, t)
 		result.add(p, p.y / wave_h, foam_here, curl * lerpf(0.9, 0.5, t), 0.1)
 	result.face_to = result.points.size() - 1
 
@@ -346,8 +385,13 @@ static func sample_distance(index: int) -> float:
 	return lerpf(-PROFILE_BEHIND, PROFILE_AHEAD, index / float(PROFILE_WIDTH - 1))
 
 
-static func _arc_point(centre_z: float, centre_y: float, arc_radius: float, theta: float) -> Vector2:
-	return Vector2(centre_z + arc_radius * cos(theta), centre_y + arc_radius * sin(theta))
+static func _arc_point(centre_z: float, centre_y: float, arc_radius: float, theta: float, aspect := 1.0) -> Vector2:
+	return Vector2(centre_z + arc_radius * cos(theta) * aspect, centre_y + arc_radius * sin(theta))
+
+
+## How much wider than high the tube is for a curl (0 to 1): round for a shallow curl, BARREL_ASPECT for a full barrel.
+static func barrel_aspect(curl: float) -> float:
+	return lerpf(1.0, BARREL_ASPECT, smoothstep(0.2, 1.0, curl))
 
 
 static func _bezier(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:

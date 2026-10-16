@@ -17,8 +17,9 @@ const KINDS := {
 	Kind.CRUISER_WALL: {"size": 0.0, "hollow": 0.0, "peel": 1.0, "half_width": 12.0},
 	Kind.DEEP_CHANNEL: {"size": -0.18, "hollow": -0.35, "peel": 0.72, "half_width": 12.0},
 	Kind.RACECOURSE: {"size": 0.10, "hollow": 0.20, "peel": 1.32, "half_width": 14.0},
-	# (the spec's 10 m bowl passed the surfer too quickly to hold a barrel: 13 m gives about 1.5 s of real tube)
-	Kind.REEF_BOWL: {"size": 0.22, "hollow": 0.48, "peel": 1.15, "half_width": 13.0},
+	# (the spec's 10 m bowl passed the surfer too quickly to hold a barrel: 13 m gives about 1.5 s of real tube; and
+	# +0.18 size rather than +0.22, which on the late tide made a tube far taller than the key frames' wave)
+	Kind.REEF_BOWL: {"size": 0.18, "hollow": 0.48, "peel": 1.15, "half_width": 13.0},
 }
 const NAMES := {
 	Kind.CRUISER_WALL: "cruiser wall", Kind.DEEP_CHANNEL: "deep channel",

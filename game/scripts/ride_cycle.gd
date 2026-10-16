@@ -18,7 +18,7 @@ const SWELL_EASE := 1.2              # seconds for the swell to ease toward the 
 const CAUGHT_D := -2.0               # meters behind the peel point where the foam can take him...
 const CAUGHT_FOAM := 0.4             # ...when there is this much whitewater...
 const CAUGHT_TUBE := 0.3             # ...and less tube than this (deep in a real barrel is the reward, not a fall)
-const CAUGHT_TIME := 1.0             # seconds there before he goes
+const CAUGHT_TIME := 1.5             # seconds there before he goes
 const HEAD_U := 0.75                 # high on the face behind the break, a bowl's landing lip takes him
 const HEAD_BOWL := 0.5
 

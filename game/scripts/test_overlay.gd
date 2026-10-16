@@ -52,6 +52,11 @@ func add_action(keycode: Key, text: String, action: Callable) -> void:
 	button.add_theme_font_size_override("font_size", FONT_SIZE)
 	button.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	button.add_theme_constant_override("outline_size", 4)
+	# (no padding: a tight column that leaves the wave in view)
+	var bare := StyleBoxEmpty.new()
+	for state: String in ["normal", "hover", "pressed", "focus"]:
+		button.add_theme_stylebox_override(state, bare)
+	button.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.6))
 	button.pressed.connect(action)
 	add_child(button)
 

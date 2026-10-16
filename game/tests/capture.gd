@@ -14,11 +14,17 @@ extends SceneTree
 ##   ride=chase        steer far down the line, so he pumps for speed
 ##   ride=floater      drive up to the top and let go, so he floats along it
 ##   readout=yes       show the debug readout (speed, lean, load, balance)
+##   solar=1.5         the evening at that time (0 golden .. 3 night), held there, with the tide's wave (size and hollow
+##                     are then ignored); without it the mood option is used and the evening is held
+##   reef=on           let reef sections come by themselves (off by default, so captures repeat)
+##   events=bowl@0,wipeout@200   at those frames: a section (wall, channel, race, bowl) sent in from down the line, or
+##                     barrel (G), wipeout (K), lull (Y)
+##   overlay=no        hide the test buttons and key list
 ## (peel is how many meters ahead of the peel point the surfer is.) It also prints the average frame
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": "", "move": ""}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": "", "move": "", "solar": "", "reef": "off", "events": "", "overlay": "yes"}
 
 
 func _initialize() -> void:
@@ -28,8 +34,22 @@ func _initialize() -> void:
 	var world: Control = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(world)
 	await process_frame   # let the scene finish its _ready before configuring it
-	root.get_node("Palette").select(options.mood, true)
-	world.set_wave(float(options.size), float(options.hollow), float(options.peel))
+	world.solar.running = false
+	world.reef.enabled = options.reef == "on"
+	world.reef.sections.clear()
+	if options.solar != "":
+		world.evening_phase(0)
+		world.solar.time = float(options.solar)
+		var tide: Vector3 = world.solar.tide()
+		world.set_wave(tide.x, tide.y, float(options.peel))
+	else:
+		world._mood_from_clock = false
+		root.get_node("Palette").select(options.mood, true)
+		world.set_wave(float(options.size), float(options.hollow), float(options.peel))
+	if options.overlay == "no":
+		world._overlay.visible = false
+		world._key_help.visible = false
+	var events := _read_events(options.events)
 	world.set_surfer_pose(options.pose)
 	if options.s3d != "":  # the real-time surfer, optionally already blended to a pose (trim, crouch, bottom_turn)
 		world._set_surfer_3d(true)
@@ -58,6 +78,8 @@ func _initialize() -> void:
 			timed_from = Time.get_ticks_usec()
 		for strength: float in bursts.get(i, []):
 			world.burst(strength)
+		for event: String in events.get(i, []):
+			_trigger(world, event)
 		if options.ride == "cycle":
 			var phase := fmod(i / 60.0, 4.4)
 			world._ride_input.nudge_height(-0.02 if phase < 0.9 else (0.03 if phase < 2.4 else (-0.05 if phase < 2.8 else 0.0)))
@@ -110,6 +132,31 @@ func _read_options() -> Dictionary:
 		if parts.size() == 2:
 			options[parts[0]] = parts[1]
 	return options
+
+
+## "bowl@0,wipeout@200" becomes {0: ["bowl"], 200: ["wipeout"]}.
+func _read_events(text: String) -> Dictionary:
+	var result := {}
+	for part in text.split(",", false):
+		var pair := part.split("@")
+		if pair.size() == 2:
+			var list: Array = result.get(int(pair[1]), [])
+			list.append(pair[0])
+			result[int(pair[1])] = list
+	return result
+
+
+func _trigger(world: Control, event: String) -> void:
+	var kinds := {"wall": SectionDirector.Kind.CRUISER_WALL, "channel": SectionDirector.Kind.DEEP_CHANNEL,
+		"race": SectionDirector.Kind.RACECOURSE, "bowl": SectionDirector.Kind.REEF_BOWL}
+	if kinds.has(event):
+		world.send_section(kinds[event])
+	elif event == "barrel":
+		world.barrel_now()
+	elif event == "wipeout":
+		world.wipeout_now()
+	elif event == "lull":
+		world.lull_now()
 
 
 ## "0.5@30,1.0@80" becomes {30: [0.5], 80: [1.0]}.

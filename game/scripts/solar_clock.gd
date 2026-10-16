@@ -20,11 +20,13 @@ const WIPEOUT_STEP_BACK := 0.35
 ## Where each mood is reached, as (time, mood): between two entries the look blends from one to the next.
 const MOOD_KEYS := [[0.0, "golden"], [1.0, "sunset"], [2.0, "neon"], [NIGHT, "dusk"], [2.85, "bioluminescent"]]
 ## The tide over the reef as (time, wave size, hollowness, peel speed factor), eased between entries: mid-high tide
-## through the golden hour, dropping through the sunset, a draining reef at dusk and night.
+## through the golden hour, dropping through the sunset, a draining reef at dusk and night. (Gentler than the spec's
+## 0.68 / 0.65 and 0.82 / 0.85: at those the whole wall was one closing barrel round the surfer, with no open face to
+## carve; the bowls, which come more than half the time late on, still throw the heavy barrels.)
 const TIDE_KEYS := [
 	[0.0, 0.50, 0.42, 1.0], [0.8, 0.50, 0.42, 1.0],
-	[1.2, 0.68, 0.65, 1.15], [1.9, 0.68, 0.65, 1.15],
-	[2.2, 0.82, 0.85, 1.28], [END, 0.82, 0.85, 1.28],
+	[1.2, 0.62, 0.56, 1.12], [1.9, 0.62, 0.56, 1.12],
+	[2.2, 0.72, 0.70, 1.22], [END, 0.72, 0.70, 1.22],
 ]
 ## The sun's height on screen (its centre, in screen heights from the top; the horizon is at 0.40) as (time, height):
 ## it sinks through the evening and is gone below the horizon by night.

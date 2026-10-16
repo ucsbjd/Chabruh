@@ -8,13 +8,15 @@
 #                           [-Ride cycle] drop, bottom turn, hit the lip, every 4.4 s; [-Ride stall] steer back 3 s, let go
 #                           [-Ride cutback] the C key's cutback; [-Ride chase] pumping; [-Ride floater] along the top
 #                           [-Move lip_hit|cutback|floater|tube|pump] plays a hotkey move over and over
+#                           [-Solar 2.9] the evening at that time, with its tide; [-Events 'bowl@0,wipeout@200'] test events
+#                           [-Reef] lets sections come by themselves; [-NoOverlay] hides the test buttons
 # -Peel is how many meters ahead of the peel point the surfer is (negative is behind it, in the barrel).
 param(
     [Parameter(Mandatory)][string]$Out,
     [double]$Size = 0.5,
     [double]$Hollow = 0.5,
     [double]$Peel = 3.0,
-    [ValidateSet('golden', 'sunset', 'neon')][string]$Mood = 'sunset',
+    [ValidateSet('golden', 'sunset', 'neon', 'dusk', 'bioluminescent')][string]$Mood = 'sunset',
     [int]$Frames = 45,
     [string]$Resolution = '1280x720',
     [string]$Pose = 'ride',
@@ -27,6 +29,10 @@ param(
     [switch]$Readout,
     [ValidateSet('', 'cycle', 'stall', 'cutback', 'chase', 'floater')][string]$Ride = '',
     [ValidateSet('', 'lip_hit', 'cutback', 'floater', 'tube', 'pump')][string]$Move = '',
+    [string]$Solar = '',
+    [string]$Events = '',
+    [switch]$Reef,
+    [switch]$NoOverlay,
     [switch]$Gallery,
     [switch]$Perf
 )
@@ -37,7 +43,7 @@ $full = if ([IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path (Get-Locati
 $arguments = @('--path', "`"$Root\game`"", '--rendering-driver', 'opengl3', '--resolution', $Resolution, '--fixed-fps', '60')
 if ($Perf) { $arguments += '--disable-vsync' }
 $arguments += @('--quit-after', ($Frames + 300), '--script', 'res://tests/capture.gd', '--',
-    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride", "move=$Move")
+    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride", "move=$Move", "solar=$Solar", "events=$Events", "reef=$(if ($Reef) { 'on' } else { 'off' })", "overlay=$(if ($NoOverlay) { 'no' } else { 'yes' })")
 
 $process = Start-Process -FilePath $Godot -ArgumentList $arguments -NoNewWindow -PassThru
 if (-not $process.WaitForExit(120000)) {

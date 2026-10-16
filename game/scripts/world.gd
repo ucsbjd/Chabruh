@@ -466,6 +466,10 @@ func _update_tube(delta: float) -> void:
 	var deep := in_tube and depth > DILATION_DEPTH and not _slung
 	_dilation = lerpf(_dilation, DILATION if deep else 1.0, 1.0 - exp(-delta / DILATION_TIME))
 	music.set_hush(depth if in_tube and not _slung else 0.0)
+	# The barrel hotkey's crouch ends once the bowl has gone by, so he drives out instead of staying under the foam.
+	if _moves.playing() and _moves.move == "tube" and model.barrel() < WaveModel.BARREL_THRESHOLD and reef.weight_of(SectionDirector.Kind.REEF_BOWL, REEF_SAMPLE_D) < 0.3:
+		_moves.stop()
+		_place_rider_steer(DEFAULT_PEEL_OFFSET)
 	var phase := WaveStage.lip_phase_at(rider.d, _time)
 	if not _slung and _tube_time >= SLINGSHOT_AFTER and rider.d > SLINGSHOT_D and rider.vel_d > 0.0 and phase >= WaveStage.LIP_LANDING_PHASE:
 		spit_out()
@@ -579,6 +583,11 @@ func set_wave(wave_size: float, hollowness: float, ahead_of_peel: float) -> void
 	_stage.rebuild()
 	_first_frame = true
 	_panel.show_values(wave_size, hollowness, peel_offset)
+
+
+## Points the steering at a place along the wave without moving him: he rides there.
+func _place_rider_steer(meters_ahead: float) -> void:
+	_ride_input.steer = Rider.steer_for(meters_ahead)
 
 
 ## Puts the surfer at a place along the wave (and mid face) and points the input at it, so they stay there.

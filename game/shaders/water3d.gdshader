@@ -47,7 +47,7 @@ float reef_kind(float d, float kind) {
 // One section's reef patch: mottled in the reef's own place, so it travels with the section.
 float reef_patch(vec4 r, float d, float z) {
 	float mottle = texture(noise_warp, vec2(d - r.x, z) * 0.055 + 0.17).r;
-	return reef_weight(r, d) * step(2.5, r.w) * smoothstep(0.38, 0.62, mottle);
+	return reef_weight(r, d) * step(2.5, r.w) * smoothstep(0.30, 0.55, mottle);
 }
 
 varying vec3 wpos;
@@ -93,7 +93,7 @@ void fragment() {
 	float reef = max(reef_patch(reef_a, wd, wpos.z), reef_patch(reef_b, wd, wpos.z));
 	reef *= smoothstep(-1.0, 2.0, from_trough) * (1.0 - smoothstep(8.0, 26.0, from_trough));
 	float coral = smoothstep(0.55, 0.75, texture(noise_warp, wpos.xz * 0.13 + vec2(0.4, 0.8)).r);
-	col = mix(col, mix(mix(foam_shade.rgb, wave_shadow.rgb, 0.45), sky_peach.rgb, coral * 0.45), 0.42 * reef);
+	col = mix(col, mix(mix(foam_shade.rgb, wave_shadow.rgb, 0.45), sky_peach.rgb, coral * 0.5), 0.6 * reef);
 
 	float ragged = texture(noise_warp, flow * 0.09).r - 0.5;
 	float lumps = texture(noise_warp, flow * 0.25 + vec2(time * 0.08, 0.0)).r - 0.5;   // the churned water is choppy, not smooth

@@ -1084,7 +1084,7 @@ func _test_evening() -> void:
 	clock.step_back()
 	_check(is_equal_approx(clock.time, 1.0 - SolarClock.WIPEOUT_STEP_BACK), "a wipeout only steps the evening back a notch")
 	clock.jump_to_phase(3)
-	_check(clock.phase_name() == "Bioluminescent Night" and clock.tide().y > 0.8, "night is the hollow, draining reef")
+	_check(clock.phase_name() == "Bioluminescent Night" and clock.tide().y > 0.65, "night is the hollow, draining reef")
 	clock.time = 2.9
 	_check(clock.mood_blend()[1] == "bioluminescent" and clock.sun_height() > 0.7, "at night the look is bioluminescent and the sun is gone")
 	var palette := root.get_node("Palette")
@@ -1123,7 +1123,7 @@ func _test_flow_and_cycle() -> void:
 	rider.place(-2.8, 0.3)
 	model.hollowness = 0.2
 	var event := ""
-	for i in 90:
+	for i in 120:
 		var e := cycle.update(1.0 / 60.0, rider, model, false)
 		event = e if e != "" else event
 	_check(event == "wipeout" and cycle.state == RideCycle.State.WIPEOUT, "caught in the foam behind the curl, he wipes out softly")

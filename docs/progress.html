@@ -373,7 +373,7 @@ const STEPS = [
     ]
   },
   {
-    n: 10, status: "todo",
+    n: 10, status: "done",
     title: "Carving physics: heading, speed and continuous 3D poses",
     goal: "Riding feels like carving a snowboard down a mountain: the nose leads, speed comes from the slope, and moves emerge from the surfer's physical state instead of playing as clips. Nothing is committed, so any move can be interrupted at any moment.",
     build: [
@@ -397,20 +397,26 @@ const STEPS = [
   },
   {
     n: 11, status: "todo",
-    title: "Finger-surf controls and calibration",
-    goal: "Two fingers on the trackpad or screen are the surfer's two feet on a finger-sized surfboard: forgiving big sweeps carve, lifting and re-centring the fingers never jerks him, and the game learns how this player moves.",
+    title: "Flow state: reef sections, the evening and the green room",
+    goal: "An endlessly replayable flow state: the wave changes as it peels over the reef (walls, channels, racecourse sections, bowls that barrel), and the longer the ride flows the later the evening gets, from golden hour to a bioluminescent night, with the tide draining and the waves getting heavier. Nothing is counted: it shows in the light, the spray and the music.",
     build: [
-      "Spec and decisions: docs/finger-surf-controls.md. A virtual stick from relative finger deltas only (never absolute pad position), a forgiving response curve (dead zone, then a curved ramp, sized by each player's own full sweep), and a clutching engine: drop the last 30 ms of a lift-off, coast on the current line while the hand resets, ramp the input back in over about 60 ms.",
-      "One code path for touch and trackpad. Touch gives true two-finger positions, spread and twist; the Windows trackpad only gives scroll steps (see the step 6 findings), so whip and snap are read from path curvature and speed, and twist is optional.",
-      "Ship rule-based snaps, floaters and cutbacks first (gesture features gated by where he is on the face), scaled by the calibration; add template matching only if the rules misfire.",
-      "Calibration: extend the existing recorder (tools/calibrate.ps1, tools/analyze_calibration.py, tools/replay.ps1) with the five actions (trim and clutch, open carve, hit the lip, floater, cutback), five trials each, robust to the one worst trial, saved to user://control_profile.json and also available from an in-game option. Replay existing recordings through the new input to retune data/tuning.tres.",
-      "Keyboard stays as the fallback. Never let the wheel scroll the page."
+      "SectionDirector (scripts/section_director.gd, reef_section.gd): two travelling reef sections in wave space (cruiser wall, deep channel, racecourse, reef bowl) that move toward the peel point at the peel speed. WaveModel reads them live for the rider (height, trough suck-out, draw and push, peel speed) and the shaders get the same numbers as two vec4s; the curl follows the reef at the peel point through a reshape built over several frames (WaveMeshBuilder, WaveMistBuilder), never a per-frame rebuild.",
+      "Telegraphs: dark violet and coral reef patches in the water over a coming bowl, the trough drawn in and darker over it, and the crest feathering (taller, thicker mist) ahead of a racecourse or bowl.",
+      "SolarClock (scripts/solar_clock.gd): the evening advances while riding (45 s a phase, faster in flow), blending golden, sunset, neon, the new dusk and bioluminescent moods, sinking the sun, and dropping the tide (bigger, hollower, faster waves; bowls 25% early to 55% late). A wipeout steps it back 0.35.",
+      "Rider.flow (0 to 1): grows carving cleanly, pumping, in the tube and with big turns off the top; fades with jerky input and bogging on the shoulder. It drives the spray (fuller fans, a bright rim at high flow) and the music.",
+      "The green room: in the tube the camera tucks in (yaw 22, lens 19.5), time eases to 0.88x, the sound hushes through a low-pass; held 0.9 s and driving out as the lip lands, the barrel spits him out with a dense cloud and +1.6 m/s.",
+      "RideCycle (scripts/ride_cycle.gd): caught in the foam behind the curl (or a bowl's lip on his head) is a soft tumble, then a glassy lull, then the next swell rises and he stands up. No game over.",
+      "MusicLayers (scripts/music_layers.gd, music_dsp.gd, music_tasks.gd): four procedurally generated synthwave stems (pad, bass, gated drums, lead) that fade in with flow, an ocean bed, the tube roar and spray splashes, all made at load (no audio files). Q mutes.",
+      "Camera: swings round to look down the line out on the shoulder and when a section is coming, tucks in for the tube, and sways slowly.",
+      "Test overlay (top right, H hides it): 4 to 7 send each reef section, 8 turns the reef off, G barrel now, K wipeout, Y lull, Z X V N jump to each part of the evening, U holds the evening, Q sound. capture.ps1 takes -Solar, -Events and -Reef."
     ],
-    notNow: ["The full wave cycle, sound and ship polish."],
+    notNow: ["Controls (the last step), the 3D surfer's tumble and paddle poses."],
     verify: [
-      "On my trackpad, big smooth sweeps carve, small movements trim calmly, and lifting my fingers to re-centre never flicks him.",
-      "Whipping my fingers at the crest snaps the lip, holding up at the crest floats, and a wide arc back cuts back; each can be interrupted.",
-      "Running the calibration changes how far I need to sweep, and the replay tool shows my recorded runs feel right."
+      "Riding a few minutes, the light goes from golden to sunset to dusk to the glowing night, the waves get bigger and hollower, and nothing is ever counted.",
+      "Each section hotkey (4 to 7) brings a different stretch of wave a few seconds later, and I can read a bowl or racecourse coming (feathering crest, reef in the water).",
+      "G gives a barrel: the camera tucks in, time slows a touch, the sound goes hollow, and driving out I get spat out with a burst of speed.",
+      "K and Y: a soft tumble, a calm glassy lull, then the next wave stands up and I ride again. No game over.",
+      "With sound on (click first), the pad plays alone when idle and the bass, drums and lead come in as the ride flows."
     ]
   },
   {
@@ -452,6 +458,7 @@ const STEPS = [
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
+      "Step 11 already brought the procedural stems, ocean bed, tube hush and splashes, and the time-of-day drift: this step tunes and mixes them by ear, adds wind and a mute button on screen.",
       "Ambient ocean (swell, whitewater, wind), spray hiss tied to spray size, a muffled tube whoosh. Generated or synthesised, so no asset packs and no licensing worries.",
       "Original synth-wave music in layers (pad, bass, arpeggio): only the calm pad in the lineup, more layers fading in as the ride flows.",
       "Slow time-of-day drift over a session (golden hour, sunset, neon dusk) driving the whole world through the Palette.",
@@ -483,6 +490,24 @@ const STEPS = [
       "Rotating the phone, switching tabs and coming back do not break audio or input.",
       "Load time and frame rate are acceptable (Claude reports numbers).",
       "Nothing on the live site reveals source files or reference photos."
+    ]
+  },
+  {
+    n: 16, status: "todo",
+    title: "Tune the controls: finger-surf and calibration",
+    goal: "Two fingers on the trackpad or screen are the surfer's two feet on a finger-sized surfboard: forgiving big sweeps carve, lifting and re-centring the fingers never jerks him, and the game learns how this player moves.",
+    build: [
+      "Spec and decisions: docs/finger-surf-controls.md. A virtual stick from relative finger deltas only (never absolute pad position), a forgiving response curve (dead zone, then a curved ramp, sized by each player's own full sweep), and a clutching engine: drop the last 30 ms of a lift-off, coast on the current line while the hand resets, ramp the input back in over about 60 ms.",
+      "One code path for touch and trackpad. Touch gives true two-finger positions, spread and twist; the Windows trackpad only gives scroll steps (see the step 6 findings), so whip and snap are read from path curvature and speed, and twist is optional.",
+      "Ship rule-based snaps, floaters and cutbacks first (gesture features gated by where he is on the face), scaled by the calibration; add template matching only if the rules misfire.",
+      "Calibration: extend the existing recorder (tools/calibrate.ps1, tools/analyze_calibration.py, tools/replay.ps1) with the five actions (trim and clutch, open carve, hit the lip, floater, cutback), five trials each, robust to the one worst trial, saved to user://control_profile.json and also available from an in-game option. Replay existing recordings through the new input to retune data/tuning.tres.",
+      "Keyboard stays as the fallback. Never let the wheel scroll the page."
+    ],
+    notNow: ["New features: this step is the controls only."],
+    verify: [
+      "On my trackpad, big smooth sweeps carve, small movements trim calmly, and lifting my fingers to re-centre never flicks him.",
+      "Whipping my fingers at the crest snaps the lip, holding up at the crest floats, and a wide arc back cuts back; each can be interrupted.",
+      "Running the calibration changes how far I need to sweep, and the replay tool shows my recorded runs feel right."
     ]
   }
 ];

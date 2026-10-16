@@ -36,8 +36,8 @@ float reef_kind(float d, float kind) {
 }
 
 // Feathering: a crest down the line that is about to pitch (a racecourse or a bowl coming) blows more spray, and taller.
-const float FEATHER = 0.8;
-const float FEATHER_RISE = 0.9;     // meters the curtain stands taller
+const float FEATHER = 1.6;
+const float FEATHER_RISE = 1.6;     // meters the curtain stands taller
 
 varying vec3 wpos;
 varying float amount;
@@ -48,7 +48,7 @@ void vertex() {
 	VERTEX.yz *= reef_scale(d);
 	VERTEX.y += UV.y * feather * FEATHER_RISE * swell;
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	amount = clamp(COLOR.r * (1.0 + FEATHER * feather) + 0.12 * feather, 0.0, 1.0) * smoothstep(0.05, 0.5, swell);
+	amount = clamp(COLOR.r * (1.0 + FEATHER * feather) + 0.3 * feather, 0.0, 1.0) * smoothstep(0.05, 0.5, swell);
 }
 
 float hash21(vec2 p) {

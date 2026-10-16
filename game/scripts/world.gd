@@ -58,6 +58,10 @@ const FRONT_SPRAY_SHARE := 1.1
 const SPRAY_PROBE := 1.5
 const SPRAY_ANGLE_UP := -165.0
 const SPRAY_ANGLE_DOWN := 20.0
+## The hotkeys that play a move (MovePlayer), and how hollow the wave is made for the tube if it cannot barrel yet.
+const MOVE_KEYS := {KEY_L: "lip_hit", KEY_C: "cutback", KEY_F: "floater", KEY_T: "tube", KEY_P: "pump"}
+const TUBE_HOLLOW := 0.9
+const TAKE_OVER_MOTION := 3.0       # pixels the mouse must move to take the controls back from a move being played
 
 var _time := 0.0
 var _travel := 0.0
@@ -73,6 +77,7 @@ var _swing := 0.0   # 0 on an open wave, 1 on a full barrel
 var _first_frame := true
 var _focus := Vector3.ZERO
 var _ride_input := RideInput.new()
+var _moves := MovePlayer.new()      # plays a move through the controls when its hotkey is pressed
 var _tuning: TuningData = preload("res://data/tuning.tres")
 var _calibration: Calibration
 var _key_help := Label.new()
@@ -150,16 +155,18 @@ func _process(delta: float) -> void:
 	_time += delta
 	_ride_input.process(delta)
 	_read_held_keys(delta)
+	_moves.update(delta, rider, _ride_input)
+	_show_game_speed()
 	rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), _stage.model, _tuning)
 	if _readout.visible:
 		_readout.text = "%s   speed %.1f m/s   heading %d deg   turn %.1f   crouch %.2f   lean %d deg   load %.1f g   stall %.1f
-%s" % [
+charge %.1f   release %.1f   float %.1f   spray %.2f   %s" % [
 			rider.move, rider.v, roundi(rad_to_deg(rider.theta)), rider.omega, rider.compression, roundi(rad_to_deg(rider.carve)), rider.load_g,
-			rider.stall, _balance_note()]
+			rider.stall, rider.charge, rider.release, rider.afloat, rider.spray_power, _balance_note()]
 		_readout.modulate = Color(1.0, 0.55, 0.5, 0.9) if rider.strain > 1.0 else Color(1, 1, 1, 0.6)
 	var strength := rider.take_burst()
 	if strength > 0.0:
-		burst(strength)
+		burst(strength, rider.burst_release)
 	_spray.set_wake(lerpf(0.2, 1.0, rider.speed))
 	_travel += TRAVEL_SPEED * lerpf(TRAVEL_SPEED_SLOW, TRAVEL_SPEED_FAST, rider.speed) * delta
 	for material in _materials:
@@ -169,7 +176,7 @@ func _process(delta: float) -> void:
 		ridge.place(_travel, size.y, _crop)
 	_place_surfer_and_spray()
 	_wave_spray.update(_stage, _time)
-	_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.speed * rider.sharpness, _time)
+	_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.spray_power, _time)
 	if _auto_burst:
 		_auto_burst_in -= delta
 		if _auto_burst_in <= 0.0:
@@ -179,13 +186,17 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	_ride_input.handle(event, size)
-	if event is InputEventKey:
+	if _moves.playing() and _takes_over(event):
+		_moves.stop()
+	if event is InputEventKey and event.pressed and not event.echo and MOVE_KEYS.has(event.keycode):
+		play_move(MOVE_KEYS[event.keycode])
+	elif event is InputEventKey:
 		if event.pressed and not event.echo and event.keycode == KEY_M:
 			Palette.cycle()
 		elif event.pressed and not event.echo and event.keycode == KEY_R:
 			set_wave(DEFAULT_SIZE, DEFAULT_HOLLOW, DEFAULT_PEEL_OFFSET)
 			_ride_input.reset()
-		elif event.pressed and not event.echo and event.keycode == KEY_P:
+		elif event.pressed and not event.echo and event.keycode == KEY_O:
 			set_surfer_pose(SurferSprites.ORDER[(_pose_index + 1) % SurferSprites.ORDER.size()])
 		elif event.pressed and not event.echo and event.keycode == KEY_B:
 			_throw_test_burst()
@@ -209,6 +220,26 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
 			Palette.cycle()
+
+
+## Plays a move through the controls (MovePlayer.MOVES): the hotkeys L, C, F, T and P. The tube needs a wave that
+## barrels, so if this one cannot it is made hollower first.
+func play_move(move_name: String) -> void:
+	if move_name == "tube" and _stage.model.barrel() < WaveModel.BARREL_THRESHOLD + 0.1:
+		_stage.model.hollowness = maxf(_stage.model.hollowness, TUBE_HOLLOW)
+		_stage.rebuild()
+		_panel.show_values(_stage.model.size, _stage.model.hollowness, peel_offset)
+	_moves.play(move_name)
+	_show_game_speed()
+
+
+## Whether an input event is the player taking the controls back from a move being played.
+func _takes_over(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion:
+		return event.relative.length() > TAKE_OVER_MOTION
+	if event is InputEventKey:
+		return event.pressed and event.keycode in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_W, KEY_A, KEY_S, KEY_D]
+	return event is InputEventMouseButton or event is InputEventPanGesture or event is InputEventScreenDrag or event is InputEventScreenTouch
 
 
 ## Debug: whether the input is one a real surfer could ride. He never falls here, but the readout says when he would.
@@ -236,15 +267,16 @@ func _place_rider(meters_ahead: float) -> void:
 	_stage.carve_trail.clear()
 
 
-## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). The rider calls this from the riding.
-func burst(strength: float) -> void:
+## Throws spray off the board's tail, strength 0 (a flick) to 1 (the full fan). The rider calls this from the riding;
+## `giant` (0 to 1) is how much of it is the speed he sheds stopping at the top, which throws the giant fan.
+func burst(strength: float, giant := 0.0) -> void:
 	var tail := _surfer3d.tail_point() if _surfer3d else Vector3.ZERO
-	_spray.burst(strength, _spray_angle(tail))
+	_spray.burst(strength, _spray_angle(tail), giant)
 	# At the top of the wave the front foot drives the rail through the lip and throws its own, bigger fan.
 	var top := smoothstep(FRONT_SPRAY_FROM, 0.85, rider.u)
 	if top > 0.05:
 		var front := _surfer3d.front_foot_point() if _surfer3d else Vector3.ZERO
-		_front_spray.burst(clampf(strength * FRONT_SPRAY_SHARE * top, 0.0, 1.0), _spray_angle(front))
+		_front_spray.burst(clampf(strength * FRONT_SPRAY_SHARE * top, 0.0, 1.0), _spray_angle(front), giant)
 
 
 ## Which way on screen the spray leaves a point on the board (degrees, 0 right, negative up), from the way the rider
@@ -265,7 +297,7 @@ func _spray_angle(from: Vector3) -> float:
 
 ## Shows the game speed in the corner and in the key list.
 func _show_game_speed() -> void:
-	_speed_label.text = "game speed %.1fx" % Engine.time_scale
+	_speed_label.text = "game speed %.1fx" % Engine.time_scale + ("   playing: " + MovePlayer.LABELS[_moves.move] if _moves.playing() else "")
 	_key_help.text = _key_help_text()
 
 
@@ -296,8 +328,10 @@ func _place_surfer_and_spray() -> void:
 	if _surfer3d:
 		_surfer3d.follow(rider, model, get_process_delta_time())
 		_spray.set_hand_drag(_stage.project(_surfer3d.hand_spray_point), _surfer3d.hand_spray)
+		_spray.set_rail(rider.rail_spray, _spray_angle(_surfer3d.tail_point()))
 	else:
 		_spray.set_hand_drag(Vector2.ZERO, 0.0)
+		_spray.set_rail(rider.rail_spray, SurferSpray.FAN_CENTRE)
 	# Tilt the surfer with the face: the slope of the wave under their feet, ahead of them to the left.
 	var ahead_px := _stage.project(model.surface_point(rider.d + 0.6, rider.u))
 	var behind_px := _stage.project(model.surface_point(rider.d - 0.6, rider.u))
@@ -334,7 +368,7 @@ func _add_key_help() -> void:
 	_key_help.add_theme_constant_override("outline_size", 5)
 	_key_help.add_theme_constant_override("line_spacing", -4)
 	_key_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	_key_help.position += Vector2(14.0, -190.0)
+	_key_help.position += Vector2(14.0, -225.0)
 	add_child(_key_help)
 	_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_readout.modulate = Color(1, 1, 1, 0.6)
@@ -348,15 +382,21 @@ func _add_key_help() -> void:
 	_speed_label.add_theme_font_size_override("font_size", 15)
 	_speed_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	_speed_label.add_theme_constant_override("outline_size", 5)
+	# (it grows to the left, so the move being played fits on screen beside the speed)
+	_speed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_speed_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_speed_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_speed_label.position += Vector2(-150.0, 14.0)
+	_speed_label.offset_left = -14.0
+	_speed_label.offset_right = -14.0
+	_speed_label.offset_top = 14.0
 	add_child(_speed_label)
 
 
 func _key_help_text() -> String:
 	return "\n".join([
 		"1   bottom turn (3D: toggle)", "2   crouch (3D only, toggle)", "3   3D surfer on / off",
-		"P   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow",
+		"L  hit the lip   C  cutback (hold down)   F  floater", "T  barrel crouch   P  pump   (any control takes over)",
+		"O   next animation", "B   spray burst", "M   mood", "R   reset", "- =   wave size", "[ ]   hollow",
 		", .   game speed (%.1fx)" % Engine.time_scale, "H   hide this"])
 
 

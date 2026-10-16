@@ -9,7 +9,8 @@ extends SceneTree
 ##   carve=3.0         carve up and down the face smoothly, one full cycle in this many seconds (the footage's rhythm)
 ##   ride=cycle        drop to the bottom, bottom turn up the face, hit the lip, again every 4.4 s
 ##   ride=stall        steer hard back for 3 s (stall into the pocket), then let go, again every 6 s
-##   ride=cutback      out on the shoulder: drop, bottom turn up the face, then at the top push down as hard as possible (a cutback), every 5 s
+##   ride=cutback      the cutback the C key plays (MovePlayer), again each time it finishes
+##   move=lip_hit      any move the hotkeys play (lip_hit, cutback, floater, tube, pump), again each time it finishes
 ##   ride=chase        steer far down the line, so he pumps for speed
 ##   ride=floater      drive up to the top and let go, so he floats along it
 ##   readout=yes       show the debug readout (speed, lean, load, balance)
@@ -17,7 +18,7 @@ extends SceneTree
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": ""}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": "", "move": ""}
 
 
 func _initialize() -> void:
@@ -60,10 +61,9 @@ func _initialize() -> void:
 		if options.ride == "cycle":
 			var phase := fmod(i / 60.0, 4.4)
 			world._ride_input.nudge_height(-0.02 if phase < 0.9 else (0.03 if phase < 2.4 else (-0.05 if phase < 2.8 else 0.0)))
-		elif options.ride == "cutback":  # out on the shoulder, where a cutback has room (in the pocket the same push is a snap)
-			var phase := fmod(i / 60.0, 5.0)
-			world._ride_input.steer = Rider.steer_for(10.0)
-			world._ride_input.nudge_height(-0.02 if phase < 0.9 else (0.03 if phase < 2.3 else (-0.08 if phase < 3.3 else 0.0)))
+		elif options.ride == "cutback" or options.move != "":
+			if not world._moves.playing():
+				world.play_move("cutback" if options.move == "" else options.move)
 		elif options.ride == "chase":
 			world._ride_input.steer = 0.95
 		elif options.ride == "floater":

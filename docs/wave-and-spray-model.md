@@ -198,11 +198,16 @@ run = v cosθ − V_p                     (the wave outruns you unless v cosθ >
       closing on the curl: run = −1.0 V_p · tanh(−run / 1.0 V_p) · clamp((d + 3)/2.5)   (soft limit, eases to a stop)
       running ahead: run · clamp((16 − d)/2)
 d' = d + run·Δt                        within [−3 m, +16 m], never slammed into
-rise = ( v sinθ sinφ + v_draw ) / H   face heights per second; v_draw = 1.1·D(d,u) (the water's draw, see section 1)
-u'  = u + rise·Δt                     with soft cushions near u=0.06 and u=0.96; in a snap the lip holds the tail
-                                      (a falling rise is scaled by 1 − lip_hold) until the nose is round
+rise = ( v sinθ + lift ) / L(d,u)     u per second. L is the face's length per unit of u (WaveModel.face_length_at):
+                                      u runs along the outline, not the height (the sixth pass, docs/balance.md).
+                                      lift = v_draw = 1.1·D(d,u), or after a release lerp(v_draw, −2 sinφ, afloat)
+u'  = u + rise·Δt                     with soft cushions near u=0.06 and u=0.96; in a snap the lip holds the tail, and
+                                      after a release the top holds him while the board comes round
+                                      (a falling rise is scaled by (1 − lip_hold)(1 − 0.85 release))
+run uses V_p·(1 − 0.75 carry): stopped at the top and floating down he comes down with the section he hit
 ```
-Speed band: `v ∈ [0.45, 2.1]·V_p`, trim speed 1.05·V_p. Gameplay is therefore speed *relative to the wave's own speed*.
+Speed band: `v ∈ [0.45, 2.1]·V_p` (down to 0.3·V_p stopped at the top), trim speed 1.05·V_p. Gameplay is therefore
+speed *relative to the wave's own speed*.
 
 ### 5.3 Forces / energy (snowboard-style carving model)
 ```
@@ -213,8 +218,17 @@ a_pump  = k_pump · pump_amount · sinφ · (1 − speed) · W²      (rhythmic 
 a_drive = clamp( 0.5·(v_want − v)·(1 if accelerating else 0.3), ±6 ) · S(−0.1, 0.4, cosθ) · W²
           (it is the wave's push: it fades down the shoulder and does nothing pointed back toward the curl)
 v_want  = min( V_p / max(cosθ, 0.35), 1.2·V_trim ) · lerp(0.6, 1, W) + clamp( 0.7·(d_want − d), −0.4 V_p, 0.8 V_p ) · W
-v'      = clamp(v + (a_slope + a_drag + a_pump + a_drive)Δt, 0.45 V_p, 2.1 V_p)
+a_launch  = 12 · charge · max(sinθ, 0) · (1 − top) · W      (the bottom turn's stored press, spent exploding up)
+a_release = −release · max(v − 0.3 V_p, 0) / 0.15            (stopping at the top: the speed goes into the spray)
+a_float   = −6 · afloat · max(−sinθ, 0) · max(v − 0.7 V_p, 0) (floating down, never a rush down the middle)
+a_slope  ×= (1 − 0.6(1 − top)) climbing; (1 − lip_hold)·lerp(1, 0.45, afloat) dropping
+a_pump   ×= (1 − S(0.6, 1.0, |θ|))·(1 − max(release, afloat)), strokes capped at 0.6 rad
+a_drive  ×= (1 − afloat)
+v'      = clamp(v + (all of them)Δt, lerp(0.45, 0.3, max(release, afloat))·V_p, 2.1 V_p)
 ```
+`top = S(0.7, 0.86, u)`; `release` follows `top · clamp(−ω/1.8) · approach` (approach: how steeply he came up the face,
+S(0.45, 1.05, θ) remembered over 0.8 s), and `afloat` latches with it and fades through the descent. See
+docs/balance.md, "Sixth pass".
 Energy is **where the face is steep and the water draws hardest** (near the peak, high on the face); the trough is flat
 and the shoulder soft, so speed bleeds off out in front and the curl comes back. Carving and pointing across the line
 cost speed; a "stall" (steer back) drags; a cutback bleeds 0.6 of its speed a second while coming round.
@@ -284,11 +298,16 @@ sun_glint) → foam_lit → transparent violet (foam_shade, alpha 0). No lightin
 ### 6.1 Surfer fan ("the signature effect"), `SurferSpray`, CPUParticles2D, screen-space
 Triggered by the rider:
 ```
-power = speed · sharpness · (1 + 0.5·lip_hit)     (speed ∈[0,1], sharpness ∈[0,1] from turn rate; lip_hit = high on the
-                                                    face and turning down hard)
-a burst when power > 0.22, and another within the 0.45 s pause each time power rises 0.15 above the last one, so
-the biggest fan comes at the peak of the turn (the snap at the lip) instead of being locked out by the first.
-strength s = clamp(1.9·power, 0, 1)
+carving  = speed · sharpness · (1 + 0.5·lip_hit) · (1 − 0.7·afloat·(1 − release))
+shedding = release · max(v_carried − 0.3 V_p, 0) / (0.75 V_p) · (1 + 0.5·lip_hit)   (v_carried: the speed he brought up)
+power = max(carving, shedding)     (speed ∈[0,1], sharpness ∈[0,1] from turn rate; lip_hit = high on the face and
+                                    turning down hard)
+a burst when power > 0.22, and another within the 0.45 s pause each time power rises 0.15 above the last one (or
+reaches full, if the last was not), so the biggest fan comes as he stops at the top instead of on the way down.
+strength s = clamp(1.9·power, 0, 1); giant = release when shedding leads: ×1.4 droplets, ×1.3 launch speed,
+×1.4 lifetime, ×1.15 width. Rays are jittered by up to 0.4 of their spacing each burst.
+In a cutback the rail also throws a steady curtain while it carves round (rail_spray = clamp(2.2·speed·|ω|/3), 160
+droplets, 1.2 s, 2.5 to 7 m/s), re-aimed off the outside rail every frame so the stream paints a curving sheet.
 direction: off the outside of the turn, back along the board and up off the face,
    dir = normalize(−0.45 f + 0.85·(−sign ω)·s + (0.35 + 0.65 lip_hit) n), blended 0.75·lip_hit toward up and back over
    the crest (0.25, 0.85, −0.45); projected to the screen and kept between −165° and +20°.
@@ -393,6 +412,31 @@ Godot's particle damping is a fixed loss of speed per second in pixels, so 0.7 t
   silhouette (`depth_test_inverted` next pass) and the advected carve trail: real wins for the tube and for carves, but
   each needs its own WebGL2 test, so they are follow-ups (step 12 territory). The 18 Hz spray stream and jittered rays:
   the fan was approved as spokes; peak-timed bursts give the big lip fan without it.
+
+## 7c. The cutback energy spec (`docs/updated_physics_reco_ARGO.md`): what went in, and why
+
+Its diagnosis held up when the old physics was traced frame by frame (docs/balance.md, "Sixth pass"), with one
+correction: its "sin φ chokes the climb" is really that u runs along the face's length, so the fix is to divide by the
+face's length (not a fudge factor between 0.72 and 1), which also stops the rush down the steep top.
+
+* **In, in our own form:** a stored bottom-turn charge released as thrust up the face; part of the climb's gravity
+  brake taken by the rising water; a release at the top that dumps speed toward a stall, makes the board light and
+  pivoting, and holds him up there while it comes round; a float down with less gravity, a pace cap, no drive, no lift
+  from the draw; a lower speed floor while stopped and floating; spray from the speed being shed instead of current
+  speed, quiet while floating; a giant fan for the release; jittered rays; the carve trail fed by the same power.
+* **Changed:** the release is scaled by how steep the climb was (triggered on turn rate alone, as in the spec, every quick
+  turn high on the face became a full stop, and weaving up and down the face stalled him every time). The descent comes with the section he
+  hit (`FLOAT_CARRY`, fading once he is down): with a real stop the curl otherwise swallowed him after every hit, which
+  the spec did not account for. The spec's 18 rad/s lean and 5.8 rad/s turn cap at the apex are not used: the light
+  board's pivot already turns it at up to `snap_omega` (6.5 rad/s), and in the traces the board comes round at the top
+  without them.
+  Its hang timer is the hold above; its −dv/dt spray signal became the shed speed (measured −dv/dt also counts gravity
+  near the top, which is not spray).
+* **Superseded for the cutback (seventh pass, docs/balance.md):** the stop at the top is the lip hit's alone; a cutback
+  is a held carve that sweeps round below the lip and pivots back when let go.
+* **Found on the way:** the pump read big moves as strokes and added up to 12 m/s2 after a cutback or a snap; capped.
+* **Not in:** the quadratic Bezier lip morph (a look change to an approved animation, not control); the 2D water velocity
+  field along the crest (see 7b); per-ray speed profiles (CPUParticles2D has one speed range per emitter).
 
 ## 8. Suggested questions to ask the other AI
 * Using only a 1D parameter d (and fixed shape), how can the wave be made to look and move more like a real

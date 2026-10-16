@@ -475,7 +475,8 @@ func _test_riding() -> void:
 	weaver.place(3.0, 0.6)
 	var worst := 0.0
 	for i in 2400:
-		weaver.step(1.0 / 60.0, 0.49, -0.018 if (i / 50) % 2 == 0 else 0.018, wave, tuning)  # down, up, down, up...
+		# (S-turns, each stroke shorter than the hold that makes a cutback, which would take him back to the curl on purpose)
+		weaver.step(1.0 / 60.0, 0.49, -0.022 if (i / 20) % 2 == 0 else 0.022, wave, tuning)  # down, up, down, up...
 		worst = maxf(worst, Rider.d_for(0.49) - weaver.d)
 	_check(worst < 2.8, "going up and down the face over and over never lets the curl catch him (fell back %.1f m)" % worst)
 	var wild := Rider.new()
@@ -485,7 +486,8 @@ func _test_riding() -> void:
 	for i in 1800:
 		wild.step(1.0 / 60.0, 0.5 + 0.5 * sin(i * 0.037), 0.03 * sin(i * 0.071 + 1.0), wave, tuning)
 		inside = inside and wild.u >= Rider.U_LOW and wild.u <= Rider.U_HIGH and wild.d >= Rider.D_NEAR and wild.d <= Rider.D_FAR
-		inside = inside and wild.v >= Rider.MIN_SPEED * peel - 0.001 and wild.v <= Rider.MAX_SPEED * peel + 0.001
+		# (stopped at the top after a big climb he can be slower than he ever is riding, down to the stall)
+		inside = inside and wild.v >= Rider.STALL_SPEED * peel - 0.001 and wild.v <= Rider.MAX_SPEED * peel + 0.001
 		inside = inside and wild.theta >= Rider.THETA_MIN and wild.theta <= Rider.THETA_MAX and is_finite(wild.omega)
 	_check(inside, "wild steering for 30 seconds never leaves the wave, the speed range or the heading range")
 	_check(rider.speed >= 0.0 and rider.speed <= 1.0 and rider.sharpness >= 0.0 and rider.sharpness <= 1.0, "speed and sharpness stay between 0 and 1")
@@ -512,6 +514,8 @@ func _test_riding() -> void:
 		smallest = maxf(smallest, gentle.take_burst())
 	_check(smallest < biggest, "a gentle carve throws less than a hard snap")
 	_test_balance(wave, tuning)
+	_test_turn_off_the_top(wave, tuning)
+	_test_move_player(wave, tuning)
 
 
 ## Balance, read from the J-Bay footage: the centre of mass sits over the feet along the apparent gravity, the lean leads
@@ -597,24 +601,7 @@ func _test_balance(wave: WaveModel, tuning: TuningData) -> void:
 		staller.step(1.0 / 60.0, 0.0, 0.0, wave, tuning)
 		slowest = minf(slowest, staller.v)
 		leaned_back = minf(leaned_back, staller.pitch)
-	# The cutback (the Bells footage): at the top, pushing down as hard as he can carries the turn round past straight down
-	# toward the curl; he is very compact round there, then the water pivots the board back to the line.
-	var cutter := Rider.new()
-	cutter.place(10.0, 0.5)
-	var roundest := 0.0
-	var crouched_round := 0.0
-	var back_on_line := false
-	var closest := 99.0
-	for i in 330:
-		var t := i / 60.0
-		cutter.step(1.0 / 60.0, Rider.steer_for(10.0), -0.02 if t < 0.9 else (0.03 if t < 2.3 else (-0.08 if t < 3.3 else 0.0)), wave, tuning)
-		roundest = minf(roundest, cutter.theta)
-		closest = minf(closest, cutter.d)
-		if cutter.theta < -2.0:
-			crouched_round = maxf(crouched_round, cutter.compression)
-		back_on_line = back_on_line or (roundest < -2.2 and cutter.theta > -0.9)
-	_check(rad_to_deg(roundest) < -125.0 and crouched_round > 0.8 and back_on_line, "out on the shoulder a hard push down at the top cuts back round toward the curl, compact, then pivots back to the line (%d degrees)" % rad_to_deg(roundest))
-	_check(closest > 0.0, "the cutback rebounds off the foam, still ahead of the curl (closest %.1f m ahead of the peel point)" % closest)
+	_test_cutback(wave, tuning)
 	# The same push in the pocket, close to the curl, is a snap off the lip: no cutback, no ricochet back into the curl.
 	var pocket := Rider.new()
 	pocket.place(3.0, 0.5)
@@ -627,7 +614,8 @@ func _test_balance(wave: WaveModel, tuning: TuningData) -> void:
 		cut_in_pocket = cut_in_pocket or pocket.cutting_back
 		fastest_back = maxf(fastest_back, -pocket.vel_d)
 		nearest = minf(nearest, pocket.d)
-	_check(not cut_in_pocket and fastest_back < Rider.BACK_MAX * wave.peel_speed() + 0.01 and nearest > -1.0, "in the pocket the same push is a snap: he never ricochets back into the curl (fastest back %.1f m/s, nearest %.1f m)" % [fastest_back, nearest])
+	# (stopped at the top he comes down with the section he hit, into the foam at the curl as in the footage, but no further)
+	_check(not cut_in_pocket and fastest_back < Rider.BACK_MAX * wave.peel_speed() + 0.01 and nearest > -2.0, "in the pocket the same push is a snap: he never ricochets back into the curl (fastest back %.1f m/s, nearest %.1f m)" % [fastest_back, nearest])
 	# Wherever he goes he never slams into either end of the wave: closing on the curl, or running out along the shoulder, eases to a stop.
 	var slammer := Rider.new()
 	slammer.place(0.0, 0.5)
@@ -665,6 +653,194 @@ func _test_balance(wave: WaveModel, tuning: TuningData) -> void:
 			high = maxf(high, pumper2.compression)
 	_check(pumped > 0.5 and high - low > 0.15, "chasing down the line he pumps (crouch %.2f to %.2f)" % [low, high])
 	_check(staller.d < -1.0 and slowest < 0.75 * wave.peel_speed() and leaned_back < -0.2, "steering hard back stalls him into the curl (d %.1f m, %.1f m/s, leaning back %d degrees)" % [staller.d, slowest, rad_to_deg(leaned_back)])
+
+
+## The rhythm of a turn off the top, timed from the Bells footage (docs/balance.md, "Timing"): he explodes up the face
+## (0.3 to 0.5 s from the foot of the face to the lip), stops at the top while the board comes round and the giant fan
+## goes (0.5 to 0.8 s), then floats down (1.0 to 1.5 s) instead of accelerating down the middle of the face.
+func _test_turn_off_the_top(wave: WaveModel, tuning: TuningData) -> void:
+	var peel := wave.peel_speed()
+	for ride: String in ["lip", "shoulder"]:
+		var rider := Rider.new()
+		var shoulder := ride == "shoulder"  # (driving steeply all the way to the lip out on the shoulder is a hit too, not a cutback)
+		rider.place(10.0 if shoulder else 3.0, 0.5)
+		var steer := Rider.steer_for(10.0) if shoulder else RideInput.REST_STEER
+		var climb_from := -1.0       # when he passed a quarter of the way up the face, climbing
+		var climb_to := -1.0         # ...and when he reached the top
+		var climb_start_v := 0.0
+		var climb_peak := 0.0
+		var top_min := 99.0          # slowest at the top after the turn
+		var round_at := -1.0         # when the nose came round down the face at the top
+		var round_high := 0.0        # how high he was then
+		var landed_at := -1.0        # when he was back down to the lower face, where the next bottom turn starts
+		var fall_peak_v := 0.0       # fastest coming down the middle of the face
+		var fall_peak_a := -99.0     # ...and the hardest he was pushed there
+		var biggest := 0.0           # the biggest burst, where it went and when
+		var biggest_u := 0.0
+		var biggest_at := 0.0
+		var hardest_stop := 0.0      # the hardest he slowed, and when
+		var hardest_stop_at := 0.0
+		var falling_burst := 0.0     # the biggest burst while floating down the middle of the face
+		var last_v := 0.0
+		for i in 360:
+			var t := i / 60.0
+			rider.step(1.0 / 60.0, steer, -0.02 if t < 0.9 else (0.03 if t < 2.3 else (-0.08 if t < 3.3 else 0.0)), wave, tuning)
+			var burst := rider.take_burst()
+			var accel := (rider.v - last_v) * 60.0 if i > 0 else 0.0
+			last_v = rider.v
+			var after_top := climb_to >= 0.0
+			if not after_top and climb_from < 0.0 and rider.theta > 0.3 and rider.u > 0.25:
+				climb_from = t
+				climb_start_v = rider.v
+			if climb_from >= 0.0 and not after_top:
+				climb_peak = maxf(climb_peak, rider.v)
+				if rider.u > 0.85:
+					climb_to = t
+			if after_top and rider.u > 0.8:
+				top_min = minf(top_min, rider.v)
+			if after_top and round_at < 0.0 and rider.theta < -0.6:
+				round_at = t
+				round_high = rider.u
+			if round_at >= 0.0 and landed_at < 0.0:
+				if rider.u < 0.45:
+					landed_at = t
+				elif rider.u < 0.75:
+					fall_peak_v = maxf(fall_peak_v, rider.v)
+					fall_peak_a = maxf(fall_peak_a, accel)
+					falling_burst = maxf(falling_burst, burst)
+			if after_top and rider.u > 0.75 and -accel > hardest_stop:
+				hardest_stop = -accel
+				hardest_stop_at = t
+			if burst > biggest:
+				biggest = burst
+				biggest_u = rider.u
+				biggest_at = t
+		var climb_time := climb_to - climb_from
+		var fall_time := landed_at - round_at
+		_check(climb_from >= 0.0 and climb_time > 0.0 and climb_time < 0.6 and climb_peak > climb_start_v + 0.5, "%s: he explodes up the face, faster as he climbs (%.2f s to the top, %.1f to %.1f m/s)" % [ride, climb_time, climb_start_v, climb_peak])
+		_check(top_min < 0.4 * peel and round_high > 0.75, "%s: he comes to a stop at the top while the board comes round up there (%.1f m/s, round at %.2f up the face)" % [ride, top_min, round_high])
+		_check(biggest >= 0.95 and biggest_u > 0.8 and absf(biggest_at - hardest_stop_at) < 0.25, "%s: the giant fan goes at the top as his speed is shed (%.2f at %.2f up the face, %.2f s from the hardest stop)" % [ride, biggest, biggest_u, biggest_at - hardest_stop_at])
+		_check(landed_at >= 0.0 and fall_time > 0.8 and fall_time < 1.8, "%s: then he floats down the face in about the footage's time (%.2f s)" % [ride, fall_time])
+		_check(fall_peak_v < 0.75 * peel and fall_peak_v < 0.7 * climb_peak and fall_peak_a < 6.0 and falling_burst < 0.5, "%s: no rush down the middle of the face (%.1f m/s at most, %.1f m/s2, spray %.2f)" % [ride, fall_peak_v, fall_peak_a, falling_burst])
+
+
+## Rides a cutback the way a player would (tests/ride_trace.gd plays the same through MovePlayer): out on the shoulder, a
+## drop and a bottom turn, a moderate climb, then a push down started in the middle of the face and held for `hold`
+## seconds (0 holds until he has faced back toward the curl for `back` seconds), then let go. Returns what happened.
+func _ride_cutback(wave: WaveModel, tuning: TuningData, at: float, hold: float, back: float) -> Dictionary:
+	var rider := Rider.new()
+	rider.place(at, 0.5)
+	var steer := Rider.steer_for(at)
+	var phase := "drop"
+	var result := {"start_u": -1.0, "cut_u": -1.0, "snapped": false, "release": 0.0, "peak_u": 0.0, "carve_time": -1.0, "pivot": 0.0,
+		"rail_frames": 0, "rail_max": 0.0, "frames": 0, "rebound_time": -1.0, "rebounded": false, "lowest_heading": 0.0,
+		"held_back": -10.0, "held_frames": 0, "closest": 99.0, "cut": false, "ended": false}
+	var carve_from := 0.0
+	var round_at := -1.0
+	var let_go_at := -1.0
+	for i in 600:
+		var t := i / 60.0
+		var push := 0.0
+		match phase:
+			"drop":
+				push = -0.02 if rider.aim > -0.8 else 0.0
+				if rider.u < 0.3:
+					phase = "climb"
+			"climb":
+				push = 0.02 if rider.aim < 0.6 else 0.0
+				if rider.u > 0.38 and rider.theta > 0.15:
+					phase = "carve"
+					carve_from = t
+					result.start_u = rider.u
+			"carve":
+				push = -0.02
+				if round_at < 0.0 and rider.theta < -2.6:
+					round_at = t
+				var done := (t - carve_from > hold) if hold > 0.0 else (round_at >= 0.0 and t - round_at > back)
+				if done or rider.rebounding:
+					phase = "let_go"
+					let_go_at = t
+		rider.step(1.0 / 60.0, steer, push, wave, tuning)
+		rider.take_burst()
+		if phase == "carve" or phase == "let_go":
+			result.cut = result.cut or rider.cutting_back
+			if result.cut_u < 0.0 and rider.cutting_back:
+				result.cut_u = rider.u
+			result.snapped = result.snapped or rider.snapping
+			result.release = maxf(result.release, rider.release)
+			result.lowest_heading = minf(result.lowest_heading, rider.theta)
+			result.closest = minf(result.closest, rider.d)
+			result.rebounded = result.rebounded or rider.rebounding
+			if phase == "carve" and round_at < 0.0:
+				result.peak_u = maxf(result.peak_u, rider.u)
+				result.pivot += rider.pivoting
+				result.frames += 1
+				result.rail_frames += 1 if rider.rail_spray > 0.1 else 0
+				result.rail_max = maxf(result.rail_max, rider.rail_spray)
+			if phase == "carve" and round_at >= 0.0:
+				result.held_back = maxf(result.held_back, rider.theta)
+				result.held_frames += 1
+		if phase == "let_go":
+			if result.rebound_time < 0.0 and rider.theta > -0.6:
+				result.rebound_time = t - let_go_at
+			result.ended = not rider.cutting_back
+			if t - let_go_at > 1.5:
+				break
+	result.carve_time = round_at - carve_from if round_at >= 0.0 else -1.0
+	result.pivot /= maxf(result.frames, 1.0)
+	result.rail_share = float(result.rail_frames) / maxf(result.frames, 1.0)
+	return result
+
+
+## The cutback (the slow-motion clip from 37 s, and Bells 22.6 to 24 s): a turn started below the lip is a long carve
+## that swings round for as long as it is held, until he faces back toward the curl, and when it is let go the board
+## pivots back toward the line, about 180 degrees in about 0.3 s.
+func _test_cutback(wave: WaveModel, tuning: TuningData) -> void:
+	var full := _ride_cutback(wave, tuning, 12.0, 0.0, 0.3)
+	_check(full.cut and full.start_u < Rider.CUT_TOP and not full.snapped and full.release < 0.05, "a turn started below the lip out in front is a cutback, never a hit off the lip (started %.2f up the face, committed at %.2f, release %.2f)" % [full.start_u, full.cut_u, full.release])
+	_check(full.carve_time > 0.8 and full.carve_time < 1.7 and full.pivot < 0.5 and full.peak_u < 0.95, "held, it carves round on the rail until he faces back toward the curl, in about the footage's time (%.2f s, pivot %.2f, up to %.2f)" % [full.carve_time, full.pivot, full.peak_u])
+	_check(full.held_frames >= 12 and full.held_back < -2.4, "held on, he keeps facing back toward the curl (%.2f s, %d degrees at most)" % [full.held_frames / 60.0, rad_to_deg(full.held_back)])
+	_check(full.rail_max > 0.3 and full.rail_share > 0.6, "the rail throws a curtain of spray the whole way round (%.2f, %d%% of the carve)" % [full.rail_max, roundi(full.rail_share * 100.0)])
+	_check(full.rebounded and full.rebound_time > 0.0 and full.rebound_time < 0.55 and full.ended, "let go, the board pivots back toward the line quickly (%.2f s)" % full.rebound_time)
+	_check(full.closest > -1.0, "a cutback takes him back to the pocket, not past the curl (closest %.1f m ahead of the peel point)" % full.closest)
+	var early := _ride_cutback(wave, tuning, 10.0, 0.25, 0.0)
+	_check(not early.rebounded and early.lowest_heading > -2.0 and early.ended, "let go before straight down, it is just a long carve down the face (%d degrees at most)" % rad_to_deg(early.lowest_heading))
+	var pocket := _ride_cutback(wave, tuning, 3.0, 0.6, 0.0)
+	_check(not pocket.cut and not pocket.snapped and pocket.release < 0.05, "in the pocket a turn started below the lip is a carved top turn: no cutback, no hit off the lip")
+
+
+## The hotkeys play each move through the controls, as a player would, and hand the controls back when it is done.
+func _test_move_player(wave: WaveModel, tuning: TuningData) -> void:
+	for move_name: String in MovePlayer.MOVES:
+		var model := WaveModel.new()
+		model.size = wave.size
+		model.hollowness = 0.9 if move_name == "tube" else wave.hollowness
+		var rider := Rider.new()
+		rider.place(3.0, 0.5)
+		var input := RideInput.new()
+		var moves := MovePlayer.new()
+		moves.play(move_name)
+		var seen := {}
+		var finished := -1.0
+		for i in 720:
+			moves.update(1.0 / 60.0, rider, input)
+			rider.step(1.0 / 60.0, input.steer, input.take_height_push(), model, tuning)
+			rider.take_burst()
+			seen[rider.move] = true
+			if rider.snapping and rider.release > 0.6:
+				seen["full_release"] = true
+			if rider.cutting_back and rider.theta < -2.6:
+				seen["faced_back"] = true
+			if rider.rebounding:
+				seen["rebounded"] = true
+			if rider.pumping > 0.5:
+				seen["pumping"] = true
+			if finished < 0.0 and not moves.playing():
+				finished = i / 60.0
+		var signature := {"lip_hit": seen.has("full_release"), "cutback": seen.has("faced_back") and seen.has("rebounded"),
+			"floater": seen.has("floater"), "tube": seen.has("barrel"), "pump": seen.has("pumping")}
+		_check(signature[move_name] and finished > 0.0 and is_equal_approx(input.steer, RideInput.REST_STEER), "the %s hotkey plays the move and hands the controls back (done in %.1f s)" % [MovePlayer.LABELS[move_name], finished])
+		input.free()
 
 
 func _test_calibration() -> void:
@@ -799,6 +975,20 @@ func _test_world() -> void:
 	var strengths_before: int = world._test_burst
 	world._unhandled_input(key)
 	_check(world._test_burst == strengths_before + 1, "the B key throws the next test burst")
+	var lip_key := InputEventKey.new()
+	lip_key.keycode = KEY_L
+	lip_key.pressed = true
+	world._unhandled_input(lip_key)
+	await process_frame
+	await process_frame
+	var label: Label = world._speed_label
+	var playing: bool = world._moves.playing() and label.text.contains("playing") and label.get_global_rect().end.x <= world.size.x + 1.0
+	var scroll := InputEventMouseButton.new()
+	scroll.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	scroll.pressed = true
+	scroll.factor = 1.0
+	world._unhandled_input(scroll)
+	_check(playing and not world._moves.playing() and world._key_help.text.contains("C  cutback"), "the L key plays a lip hit (shown on screen in the corner), scrolling takes the controls back, and the key list shows the moves")
 	world.rider.u = 0.9
 	world.burst(1.0)
 	await process_frame

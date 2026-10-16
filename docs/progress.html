@@ -273,7 +273,7 @@ const STEPS = [
       "A jointed 2D rig and several image-generation routes were tried and dropped (stiff, or the style drifted between images). What works: capture a continuous shot of real surfing footage, make a motion clip, and run Kling motion control so an original character (bare tanned torso, bright pink-aqua-yellow 80s board shorts, rainbow shortboard) performs that motion on a flat background. The frames are keyed out, registered on the board and added as sprites.",
       "One working animation, ride (35 frames at 12 fps, ping-pong loop), in the game on the step 3 wave: the board's centre sits on the surfer's place on the face, the surfer is 1.8 m tall on screen and tilts with the wave's slope. The old rig and pose tables are gone.",
       "A reusable pipeline in tools/sprites (capture snippet, clip maker, extractor) with every step, command, cost and lesson written down in docs/sprite-pipeline.md, so more animations (cutback, bottom turn, top turn, air, barrel crouch, wipeout, paddle, pop-up) are a recipe, not research.",
-      "?gallery shows every animation in a grid plus a cycler; ?pose=ride and the P key choose the animation in the main scene (temporary until step 6)."
+      "?gallery shows every animation in a grid plus a cycler; ?pose=ride and the P key choose the animation in the main scene (temporary until step 6; the key is O since step 10)."
     ],
     notNow: ["More animations (they come as later steps need them), riding the wave, controls, spray."],
     verify: [
@@ -389,7 +389,10 @@ const STEPS = [
       "I can reverse any turn midway and the response is immediate, with a believable sense of weight.",
       "A bottom turn only happens low on the face and a top turn high; stalling too long lets the curl catch him softly; spray follows the sharpness of the turn.",
       "Scrolling down hard at the top in the pocket is a snap: he climbs, the board pivots from up the face to down it while he stays at the top, the big fan goes up over the lip, then he drops. Nothing ricochets him back into the curl.",
-      "Steered far out in front he slows on the soft shoulder; a hard push down at the top there is a cutback that carves round and rebounds off the foam; drifting back to the curl he tucks, settles and rides on."
+      "The rhythm of the Bells footage: driving hard up the face he speeds up (about 0.4 s to the lip), comes to a near stop at the top while the board comes round and a giant fan goes up, then floats down under the hanging spray in about a second. He never speeds up down the middle of the face, and the next bottom turn sends him up again.",
+      "Steered far out in front he slows on the soft shoulder; drifting back to the curl he tucks, settles and rides on.",
+      "Out in front, starting the turn below the lip and holding the push down is a cutback: a long sweeping carve with a curtain of spray, round until he faces back toward the curl with his chest to the camera; letting go snaps the board back round toward the line. A turn started below the lip is never a hit off the lip.",
+      "The hotkeys play each move (L hit the lip, C cutback, F floater, T barrel crouch, P pump), the corner shows which, and scrolling or the arrow keys take the controls back."
     ]
   },
   {

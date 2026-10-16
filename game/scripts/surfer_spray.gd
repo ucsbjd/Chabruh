@@ -5,8 +5,11 @@ extends Node2D
 ## fine droplets at its edge; a foam wake on the water behind the board; and a splash for landings.
 ##
 ## One call drives it: `burst(strength)`, strength 0 to 1. Step 6 sets that from speed times how
-## sharply the surfer turns. A gentle burst is a small low flick; a full one is the signature fan.
-## `set_hand_drag()` adds the thin sheet a hand throws up when it drags through the face in a big bottom turn.
+## sharply the surfer turns. A gentle burst is a small low flick; a full one is the signature fan. `giant` (0 to 1) is
+## how much of it is the speed he sheds stopping at the top of the wave: that fan is bigger, flies further and hangs in
+## the air while he floats down under it.
+## `set_hand_drag()` adds the thin sheet a hand throws up when it drags through the face in a big bottom turn, and
+## `set_rail()` the curtain the rail throws the whole way round a cutback, sweeping round with the board.
 ##
 ## Layers: this node sits just after the Surfer in the scene, so its droplets fly in front of them;
 ## the heavy body of the fan and the wake live in a second layer that is moved to just before the
@@ -30,6 +33,12 @@ const FAN_AMOUNT_FULL := 190
 const EDGE_AMOUNT_FULL := 90
 const CORE_AMOUNT_FULL := 8
 const SPLASH_AMOUNT_FULL := 110
+## A giant fan (stopping at the top) has this much more of everything: droplets, launch speed, time in the air, and width.
+const GIANT_AMOUNT := 0.4
+const GIANT_SPEED := 0.3
+const GIANT_LIFE := 0.4
+const GIANT_WIDTH := 0.15
+const RAY_JITTER := 0.4              # each burst moves every ray by up to this share of the gap between rays, so no two fans match
 ## Air drag, meters per second of speed lost each second (Godot's particle damping is a fixed loss of speed per second,
 ## in pixels, so it is scaled by the surfer's size on screen): the slow droplets hang near the tail while the fast ones
 ## fly on, so the fan thins out with range.
@@ -41,6 +50,13 @@ const WAKE_LIFETIME := 1.6
 const HAND_AMOUNT := 40
 const HAND_LIFETIME := 0.45
 const HAND_SPEED := Vector2(1.4, 3.2)  # meters per second, up and back from the fingers
+## The cutback's curtain: a steady stream off the outside rail, aimed where the rail throws it each frame, so as the board
+## swings round the stream paints a curving sheet (the slow-motion clip, 41 to 44 s), hanging a while as it falls.
+const RAIL_AMOUNT := 160
+const RAIL_LIFETIME := 1.2
+const RAIL_SPEED := Vector2(2.5, 7.0)  # meters per second at full strength (half of it at the least)
+const RAIL_SPREAD := 16.0
+const RAIL_FROM := 0.08              # below this strength the rail throws nothing
 ## Pixels per meter the textures were drawn for; particle scales are relative to this.
 const REFERENCE_PIXELS_PER_METER := 104.0
 
@@ -53,6 +69,7 @@ var _cores: Array[CPUParticles2D] = []
 var _splash: CPUParticles2D
 var _wake: CPUParticles2D
 var _hand: CPUParticles2D
+var _rail: CPUParticles2D
 var _droplet := SprayTextures.droplet()
 var _blob := SprayTextures.blob()
 var _sheet := SprayTextures.sheet()
@@ -74,6 +91,8 @@ func _init() -> void:
 	_setup_wake()
 	_hand = _make_emitter(self, _droplet)
 	_setup_hand()
+	_rail = _make_emitter(_back, _droplet)
+	_setup_rail()
 	add_child(_back)
 
 
@@ -96,17 +115,19 @@ func _place_back_layer() -> void:
 
 ## Throws a fan of spray off the board's tail. `strength` is 0 (a small flick) to 1 (the full fan); `centre_degrees` is
 ## the way it goes on screen (0 is right, negative is up), off the outside of the turn.
-func burst(strength: float, centre_degrees := FAN_CENTRE) -> void:
+func burst(strength: float, centre_degrees := FAN_CENTRE, giant := 0.0) -> void:
 	var s := clampf(strength, 0.0, 1.0)
-	var half_width := lerpf(FAN_HALF_WIDTH_GENTLE, FAN_HALF_WIDTH_FULL, pow(s, 0.7))
-	var speeds := FAN_SPEED_GENTLE.lerp(FAN_SPEED_FULL, s)
-	var life := lerpf(FAN_LIFETIME_GENTLE, FAN_LIFETIME_FULL, s)
+	var big := clampf(giant, 0.0, 1.0) * s
+	var half_width := lerpf(FAN_HALF_WIDTH_GENTLE, FAN_HALF_WIDTH_FULL, pow(s, 0.7)) * (1.0 + GIANT_WIDTH * big)
+	var speeds := FAN_SPEED_GENTLE.lerp(FAN_SPEED_FULL, s) * (1.0 + GIANT_SPEED * big)
+	var life := lerpf(FAN_LIFETIME_GENTLE, FAN_LIFETIME_FULL, s) * (1.0 + GIANT_LIFE * big)
+	var more := 1.0 + GIANT_AMOUNT * big
 	var index := _next % POOL
 	_next += 1
 	var size_scale := DROPLET_SCALE * _pixels_per_meter / REFERENCE_PIXELS_PER_METER
 
-	_fire(_fans[index], int(lerpf(FAN_AMOUNT_GENTLE, FAN_AMOUNT_FULL, s)), life, centre_degrees, half_width, speeds, size_scale)
-	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s)), life * 0.9, centre_degrees, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
+	_fire(_fans[index], int(lerpf(FAN_AMOUNT_GENTLE, FAN_AMOUNT_FULL, s) * more), life, centre_degrees, half_width, speeds, size_scale)
+	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s) * more), life * 0.9, centre_degrees, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
 	_fire(_cores[index], int(lerpf(2.0, CORE_AMOUNT_FULL, s)), life * 0.6, centre_degrees, half_width * 0.8, speeds * 0.5, size_scale * 1.1)
 
 
@@ -137,6 +158,19 @@ func set_hand_drag(at: Vector2, amount: float) -> void:
 		_hand.amount = wanted
 
 
+## The curtain the rail throws carving round a cutback: `amount` 0 (none) to 1, `angle_degrees` the way it leaves the
+## tail on screen (0 is right, negative is up).
+func set_rail(amount: float, angle_degrees: float) -> void:
+	var on := amount > RAIL_FROM
+	if on != _rail.emitting:
+		_rail.emitting = on
+	if on:
+		var strength := lerpf(0.5, 1.0, clampf(amount, 0.0, 1.0))
+		_rail.direction = Vector2.from_angle(deg_to_rad(angle_degrees))
+		_rail.initial_velocity_min = RAIL_SPEED.x * strength * _pixels_per_meter
+		_rail.initial_velocity_max = RAIL_SPEED.y * strength * _pixels_per_meter
+
+
 ## Puts the spray on the board's tail. `tail` is in the parent's pixels, `pixels_per_meter` is the
 ## surfer's on-screen scale, and `drift` is how fast the water slides past, in pixels per second.
 func follow(tail: Vector2, pixels_per_meter: float, drift: float) -> void:
@@ -158,6 +192,8 @@ func follow(tail: Vector2, pixels_per_meter: float, drift: float) -> void:
 	_hand.initial_velocity_max = HAND_SPEED.y * pixels_per_meter
 	_hand.scale_amount_min = 0.25 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
 	_hand.scale_amount_max = 0.55 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
+	_rail.scale_amount_min = 0.6 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
+	_rail.scale_amount_max = 1.3 * DROPLET_SCALE * pixels_per_meter / REFERENCE_PIXELS_PER_METER
 
 
 ## Tints the spray from the mood: cream and peach where the sun lands, violet as the droplets fall into shade.
@@ -180,7 +216,7 @@ func live_particles() -> int:
 	var total := 0
 	var now := Time.get_ticks_msec()
 	for emitter in _all_emitters():
-		if emitter == _wake or emitter == _hand:
+		if emitter == _wake or emitter == _hand or emitter == _rail:
 			total += emitter.amount if emitter.emitting else 0
 		elif now < int(emitter.get_meta("dies_at", 0)):
 			total += emitter.amount
@@ -195,6 +231,7 @@ func _all_emitters() -> Array[CPUParticles2D]:
 	all.append(_splash)
 	all.append(_wake)
 	all.append(_hand)
+	all.append(_rail)
 	return all
 
 
@@ -247,6 +284,18 @@ func _setup_hand() -> void:
 	_hand.emitting = false
 
 
+## A steady stream off the outside rail, off until a cutback carves round.
+func _setup_rail() -> void:
+	_rail.one_shot = false
+	_rail.explosiveness = 0.0
+	_rail.amount = RAIL_AMOUNT
+	_rail.lifetime = RAIL_LIFETIME
+	_rail.emission_shape = CPUParticles2D.EMISSION_SHAPE_POINT
+	_rail.direction = Vector2.from_angle(deg_to_rad(FAN_CENTRE))
+	_rail.spread = RAIL_SPREAD
+	_rail.emitting = false
+
+
 ## Sets up one fan emitter for a burst and starts it.
 func _fire(emitter: CPUParticles2D, amount: int, life: float, centre_degrees: float, half_width: float, speeds: Vector2, droplet_scale: float) -> void:
 	if amount <= 0:
@@ -268,12 +317,14 @@ func _fire_with_points(emitter: CPUParticles2D, amount: int, life: float, speeds
 
 
 ## Spokes: every particle leaves along one of FAN_RAYS directions across the arc (with a hair of
-## spread), at a random speed, so the fan shows radial lines of droplets instead of a random cloud.
+## spread), at a random speed, so the fan shows radial lines of droplets instead of a random cloud. The rays shift a
+## little each burst, so the spokes are irregular, as in the photos, and no two fans match.
 func _set_fan_points(emitter: CPUParticles2D, centre_degrees: float, half_width_degrees: float) -> void:
 	var points := PackedVector2Array()
 	var normals := PackedVector2Array()
+	var gap := 1.0 / float(FAN_RAYS - 1)
 	for i in FAN_RAYS:
-		var t := i / float(FAN_RAYS - 1) - 0.5
+		var t := clampf(i * gap + randf_range(-RAY_JITTER, RAY_JITTER) * gap, 0.0, 1.0) - 0.5
 		points.append(Vector2.ZERO)
 		normals.append(Vector2.from_angle(deg_to_rad(centre_degrees + t * 2.0 * half_width_degrees)))
 	emitter.emission_points = points

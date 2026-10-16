@@ -347,6 +347,11 @@ func surface_normal(d: float, u: float) -> Vector3:
 	return Vector3(0.0, n.y, n.x)
 
 
+## Meters of face per unit of u at (d, u): a speed along the face divided by this is how fast u changes.
+func face_length_at(d: float, u: float) -> float:
+	return section(d).face_length(u)
+
+
 ## The crest at d, where the lip is thrown from: a world position.
 func crest_point(d: float) -> Vector3:
 	var s := section(d)

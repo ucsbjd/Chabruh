@@ -147,6 +147,148 @@ a pocket push is a snap and never closes on the curl faster than the soft limit,
 ahead of the peel point, stalling back to the curl eases to a stop, settled by the curl he is tucked and along the
 line, one flick carries him to the lip, and steered far out the soft shoulder slows him.
 
+## Sixth pass: the rhythm of a turn off the top (timing from the Bells footage)
+
+The user's notes: going up for a cutback he should accelerate up, come to a stop at the top where all the energy goes
+into the cutback and a giant spray, then float down. Instead he did the cutback and then accelerated down the middle of
+the face, so the most energy was on the way down. `docs/updated_physics_reco_ARGO.md` (an outside AI's spec) proposed
+a fix; section 7c of `docs/wave-and-spray-model.md` says what of it went in and why.
+
+### What the footage shows (Bells, `storyboardimages/ewing_bells`, decoded once at 12 fps)
+
+Six turns off the top (0.5 to 3.7 s, 4.0 to 7.0 s, 7.3 to 9.8 s, 15.0 to 18.3 s, 46.0 to 49.5 s, 50.0 to 53.0 s):
+
+| phase | time | what happens |
+| --- | --- | --- |
+| bottom turn | 0.3 to 0.6 s | deep crouch, rail spray low on the face |
+| climb | 0.3 to 0.5 s | from the foot of the face to the lip, fast: the board projects up the face |
+| at the top | 0.5 to 0.8 s | board vertical, back arm up; the fan erupts 0.15 to 0.2 s after he arrives and is biggest 0.3 to 0.5 s in; the board comes round (150 to 180 degrees in a cutback) while he stays up there, nearly stopped |
+| down | 1.0 to 1.5 s | compact, under the hanging spray; the foam or the curl catches up and he comes down in it |
+| whole cycle | 2.5 to 3.2 s | climb to descent is about 1 : 3 |
+
+### What was wrong (traced with `tests/ride_trace.gd`)
+
+The old cutback: 0.5 s up with the speed falling slightly; at the top his speed *rose* (+4.5 m/s2) while the board came
+round; then he dropped from the lip to the bottom in 0.45 s (a third of the footage's time) and reached 13 m/s
+(1.7 times the peel speed) in the middle of the face. Four causes:
+
+- **`u` was treated as height.** The face's points are spaced along its outline, so `u` is close to a share of the
+  face's *length*, but the rise was the vertical speed divided by the wave's height. He crawled up the gentle foot of the
+  face and rushed down the steep top three times too fast. Now `rise = (v sin theta + draw) / face_length`
+  (`WaveModel.face_length_at`), and the trim heading and the turn guards use the same rate.
+- **Big moves counted as pumping.** The pump reads the rhythm of the stick; a reversal at the lip or the stick coming
+  back after a cutback looked like a huge stroke and added up to 12 m/s2. Strokes are now capped at `PUMP_HEADING`,
+  only count near the line, and not during or after a turn off the top.
+- **Nothing took his speed at the top**, and **gravity and the drive were both full on the way down.**
+- **Spray came from current speed times turn rate**, so it peaked on the fast way down.
+
+### The model (`Rider._update_cycle`)
+
+- **Explode up (`charge`).** Loaded low on the face (the press of the bottom turn and its turn rate) he stores a
+  charge, and as the nose comes up he spends it: `LAUNCH_ACCEL` (12 m/s2 at full charge) up the face below the top,
+  over about half a second. Below the top the water rushing up the face takes `LIFT_SHARE` of gravity's brake on the
+  climb. Speed now rises through the climb and peaks two thirds of the way up.
+- **Stop at the top (`release`).** High on the face (`TOP_FROM` to `TOP_FULL`) and turning down hard, his speed falls
+  toward `STALL_SPEED` (0.3 of the peel speed) with a time constant of `RELEASE_TIME` (0.15 s): the board goes light
+  and pivots round, and the top holds him (`RELEASE_HOLD`) while it comes round. It is only as big as the climb before
+  it (`_approach`: none below 26 degrees nose up, all of it from 60), so a steep climb into the lip is a full stop, a
+  shallow one a carved top turn that keeps its flow, and trimming high then diving is just a drop.
+- **Float down (`afloat`).** After a release he feels only `FLOAT_GRAVITY` of the pull down the face, the water holds him
+  back above `FLOAT_SPEED`, the drive waits, the water no longer lifts a board that has stopped planing (he sinks
+  `FLOAT_SINK` with the lip and foam), and the section he hit carries him (`FLOAT_CARRY` of the curl's pace, fading
+  over `CARRY_FADE` once he is down) so the curl does not swallow him. The float lasts the descent and ends low on the
+  face (`FLOAT_END`), where the next bottom turn gets the wave's power.
+- **Spray from the speed he sheds.** Turning off the top the rail throws the speed it is shedding (the speed he carried
+  up the face, times how hard he is releasing), so the biggest fan comes right as he stops at the top; it is a giant
+  fan (`SurferSpray.burst(..., giant)`: 40 percent more droplets, 30 percent faster, hanging 40 percent longer) that
+  hangs while he floats down under it. Floating down, the rail throws 70 percent less. A burst that was not full yet is
+  topped up to a full one; a full one is not thrown again. The carve trail's width follows the same spray power, so the
+  gouge at the top is wide and the float down leaves a light track.
+
+### Measured after (60 fps, `tests/run_tests.gd`, "turn off the top")
+
+| | footage | lip hit (pocket) | cutback (shoulder) |
+| --- | --- | --- | --- |
+| climb, quarter way up to the top | 0.3 to 0.5 s | 0.35 s, 9.3 to 10.3 m/s | 0.38 s, 8.5 to 9.4 m/s |
+| speed at the top | nearly stopped | 2.3 m/s | 2.3 m/s |
+| where the board comes round | at the top | 0.95 up the face | 0.85 up the face |
+| biggest fan | at the top as he stops | 1.0 at 0.95, at the hardest stop | 1.0 at 0.94, at the hardest stop |
+| down to the lower face | 1.0 to 1.5 s | 0.8 s | 0.9 s |
+| fastest down the middle of the face | slow | 4.0 m/s (13.3 before) | 2.7 m/s (10.7 before) |
+
+Lip hits every 4.4 s (`ride_trace.gd -- ride=cycle`) keep him at the curl and climbing to about 11.5 m/s each time;
+cutbacks every 5 s (`ride=cutbacks`) run him out along the shoulder and back to the pocket. After a hit in the pocket
+he comes down in the foam one to two meters behind the peel point, as in the footage, and the next bottom turn takes him
+out again.
+
+```powershell
+godot_console --headless --path game --script res://tests/ride_trace.gd -- ride=cutback every=3
+```
+
+## Seventh pass: hitting the lip and the cutback are two moves, told apart by where the turn starts
+
+The user's notes: a turn started before the very top of the lip is not a hit off the lip but a long sweeping turn along
+the face, all the way back. Hitting the lip (Bells at about 19 s) is a steep rise, a violent snap that pivots the board on
+its tail, all the energy released, then down with the wave. The cutback: get out in front a bit, start the turn below
+the lip and hold it (keep scrolling or holding down) until he faces back toward the curl with his chest to the camera;
+let go and the board pivots back almost 180 degrees. Gold standard: `storyboardimages/lip_slowmo` from 37 to 49 s.
+
+### What the footage shows (every frame)
+
+- **Hitting the lip, Bells 19.3 to 21.2 s.** Bottom turn 19.33 to 19.8 s, a climb of only 0.2 s, at the lip 20.0 s with
+  the back arm up and the board vertical, the snap 20.17 to 20.5 s (the board pivots on its tail, the spray erupts),
+  down into the foam by 21.2 s. The sixth pass already models this.
+- **The cutback, Bells 22.6 to 24.0 s.** Out ahead of the whitewater he rises at a moderate angle (22.33 to 22.5 s). The
+  turn starts at about two thirds of the way up the face, well below the lip (22.58 s: rail engaged, back arm thrown).
+  The board's nose swings round through the top of a wide arc (22.83 to 23.1 s) and sweeps down the face with a big
+  curving curtain of spray behind it (23.17 to 23.42 s), until he faces back toward the whitewater, chest to the camera,
+  arms out, mid face (23.5 to 23.67 s): about 180 degrees in about 0.9 s. He meets the foam and the board pivots back
+  (23.75 to 24.0 s), about 180 degrees in about 0.3 s, compact.
+- **The slow-motion cutback, lip_slowmo 37.5 to 49.5 s** (about 4 to 5 times slow, judged by matching its phases to
+  Bells): out on the shoulder, the turn starts mid face (40.0 to 40.5), the fan arcs up and round (41 to 42.5), he lays
+  back into the turn as the board comes round (42 to 43.5), faces back toward the whitewater standing taller with his
+  arms out (44.75 to 46.5), meets it (46.75), and the board pivots back in the foam (47 to 48.3). In real time: about a
+  second of carve, a moment riding back, about 0.3 s of pivot.
+
+### The model (`Rider._update_cutback`, `MovePlayer`)
+
+- **Where the turn starts decides it.** A push down that starts below the lip (`CUT_TOP`) off a climb that is not
+  committed to it (nose up between `CUT_START_HEADING` and `CLIMB_COMMIT`, under about 49 degrees) is a carve and can
+  never become a snap or a release, even if the climb carries him up near the lip. A steep, committed climb's reversal
+  still waits for the lip and snaps there (the sixth pass).
+- **Out in front, held hard, it is a cutback.** If the turn started out in front (`CUT_ROOM`, 4 m ahead of the peel
+  point) and the push stays hard (the stick past `CUT_PUSH`) for `CUT_HOLD_TIME` (0.4 s), it commits. A quicker push is a
+  carved top turn, and a slow gentle scroll is just a carve, so S-turns down the line never turn into cutbacks.
+- **Held, it swings round.** While the push is held (pushes no more than `CUT_HOLD_GAP` apart) the turn sweeps on round
+  at a steady rate (`CUT_SWEEP`), mostly on the rail (`CUT_PIVOT` of it on the tail, `CUT_GRIP` more grip), to
+  `CUTBACK_REACH` (172 degrees), and he rides back toward the curl for as long as it is held.
+- **Let go, it pivots back.** Let go once past straight down (`CUT_PAST`), or meet the foam or the bottom, and the board
+  pivots straight back toward the line (the push is dropped at once, up to `REBOUND_OMEGA` 10 rad/s at `REBOUND_ACCEL`).
+  Let go before straight down and the turn just ends, a long carve down the face.
+- **Spray.** The fan goes as the turn bites at the top of its arc, and the rail throws a steady curtain the whole way round
+  (`Rider.rail_spray`, `SurferSpray.set_rail`), aimed off the outside rail each frame so it paints a curving sheet.
+- **No stop at the top in a cutback.** The release (stop, giant fan, float) is the lip hit's alone, and only up by the lip
+  (`TOP_FROM` 0.8 to `TOP_FULL` 0.9).
+
+### Measured (60 fps, `tests/run_tests.gd`, "cutback")
+
+| | footage | game |
+| --- | --- | --- |
+| where the turn starts | about two thirds up the face, below the lip | 0.40 up the face (commits at 0.91, never a snap, no release) |
+| carve until facing back | about 0.9 to 1.1 s | 1.45 s, mostly carved (pivot share 0.39), top of the arc 0.93 |
+| holding on | riding back at the whitewater | stays facing back (0.3 s held in the test, -151 degrees at most) |
+| pivot back after letting go | about 0.3 s | 0.45 s back to within 35 degrees of the line (0.35 s in the hotkey trace, peak 8.5 rad/s) |
+| let go before straight down | | a long carve down the face, no pivot back |
+| in the pocket (no room) | | a carved top turn, no cutback, no snap |
+
+### Hotkeys (`MovePlayer`, `scripts/move_player.gd`)
+
+L hits the lip, C cuts back (holding the push until he faces back, then letting go), F floats along the top, T steers back
+into the barrel and crouches there (making the wave hollow first if it cannot barrel), P chases down the line pumping.
+Each move works the same controls a player does, a phase at a time, watching where he is; any scroll, drag, arrow key
+or real mouse move takes the controls back. The move playing is shown next to the game speed. The sprite animation
+cycler moved from P to O. `tools\capture.ps1 -Move cutback` and `ride_trace.gd -- move=cutback` play them too.
+
 ## Too jerky to ride (debug)
 
 He never falls (no hard fail), but `Rider.strain` says when a real surfer would have: the centre of mass more than 0.7
@@ -181,7 +323,8 @@ in the top right corner so it appears in screenshots, and `?speed=1.3` starts th
 ## Not yet
 
 - Our camera sits behind him, so a fold toward the wave reads as a hunch rather than the footage's side-on fold.
-- The arcade drive still keeps his speed up on a climb (now capped on steep headings), so he reaches the lip faster
-  than in the footage; step 11's controls and a look at the drive belong together.
 - The back forearm over the head at the lip is hard to read from our camera behind him.
-- Spray strength still comes from turn rate; a snap's tail release could drive it directly.
+- With no input after a hit in the pocket he recovers slowly at the flat foot of the face (about 3 s to the curl's pace);
+  a player's next bottom turn takes him out at once. Step 11's controls should make that bottom turn easy to start.
+- The 3D surfer has no pose of its own for the stop at the top or the float (it reads the existing crouch, lean and
+  lead); a hang pose (back arm up, compact) would sell the stop.

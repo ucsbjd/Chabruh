@@ -6,7 +6,8 @@
 #                           [-Snaps 60,90] saves extra frames as <out>-60.png; [-Burst '0.8@70'] fires a spray burst
 #                           [-Carve 3] carves up and down the face, one cycle every 3 s; [-Readout] shows the debug readout
 #                           [-Ride cycle] drop, bottom turn, hit the lip, every 4.4 s; [-Ride stall] steer back 3 s, let go
-#                           [-Ride cutback] a hard push down at the top; [-Ride chase] pumping; [-Ride floater] along the top
+#                           [-Ride cutback] the C key's cutback; [-Ride chase] pumping; [-Ride floater] along the top
+#                           [-Move lip_hit|cutback|floater|tube|pump] plays a hotkey move over and over
 # -Peel is how many meters ahead of the peel point the surfer is (negative is behind it, in the barrel).
 param(
     [Parameter(Mandatory)][string]$Out,
@@ -25,6 +26,7 @@ param(
     [double]$Carve = 0,
     [switch]$Readout,
     [ValidateSet('', 'cycle', 'stall', 'cutback', 'chase', 'floater')][string]$Ride = '',
+    [ValidateSet('', 'lip_hit', 'cutback', 'floater', 'tube', 'pump')][string]$Move = '',
     [switch]$Gallery,
     [switch]$Perf
 )
@@ -35,7 +37,7 @@ $full = if ([IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path (Get-Locati
 $arguments = @('--path', "`"$Root\game`"", '--rendering-driver', 'opengl3', '--resolution', $Resolution, '--fixed-fps', '60')
 if ($Perf) { $arguments += '--disable-vsync' }
 $arguments += @('--quit-after', ($Frames + 300), '--script', 'res://tests/capture.gd', '--',
-    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride")
+    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride", "move=$Move")
 
 $process = Start-Process -FilePath $Godot -ArgumentList $arguments -NoNewWindow -PassThru
 if (-not $process.WaitForExit(120000)) {

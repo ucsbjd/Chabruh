@@ -41,6 +41,16 @@ func face_point(u: float) -> Vector2:
 	return points[face_from + index].lerp(points[face_from + index + 1], position - index)
 
 
+## Meters of face per unit of `u` at `u`. The face's points are spaced along its outline, not by height, so `u` is
+## close to a share of the face's length: this turns a speed along the face into a rate of `u`. (Measured across one
+## segment centred on `u`, so it blends from one segment to the next instead of jumping.)
+func face_length(u: float) -> float:
+	var half := 0.5 / (face_to - face_from)
+	var below := clampf(u - half, 0.0, 1.0)
+	var above := clampf(u + half, 0.0, 1.0)
+	return face_point(above).distance_to(face_point(below)) / maxf(above - below, 0.0001)
+
+
 ## The outward (into the air) unit normal of the face at `u`. It blends from one outline point's normal to the next, so it
 ## turns smoothly as a board rides up or down the face instead of jumping at every point (which tipped the board and
 ## jolted the balance).

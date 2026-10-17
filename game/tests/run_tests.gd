@@ -243,8 +243,16 @@ func _test_wave_motion() -> void:
 	_check(wave.mist_at(-1.0) > wave.mist_at(25.0) and wave.mist_at(25.0) > 0.0, "spray is thickest at the break, with a little spindrift all along the crest")
 	var stage := WaveStage.new()
 	var phase := stage.lip_phase_at(2.0, 3.0)
-	_check(phase >= 0.0 and phase < 1.0 and is_equal_approx(stage.lip_phase_at(2.0, 3.0 + WaveStage.LIP_PERIOD), phase), "the lip's cycle repeats every period")
-	_check(stage.lip_phase_at(2.0 - WaveStage.LIP_SPACING, 3.0) == stage.lip_phase_at(2.0, 3.0) or absf(stage.lip_phase_at(2.0 - WaveStage.LIP_SPACING, 3.0) - phase) > 0.99, "lips one spacing apart along the crest are in the same state")
+	_check(phase >= 0.0 and phase < 1.0 and is_equal_approx(stage.lip_phase_at(2.0, 3.0 + WaveStage.LIP_PERIOD), phase), "the lip's breath repeats every period")
+	# One way: following a stretch of crest as the peel passes it (d falls at the slowest peel speed), its phase never goes back.
+	var one_way := true
+	var last := -1.0
+	for i in 400:
+		var t := i * 0.05
+		var now := stage.lip_phase_at(8.0 - 4.0 * t, t)
+		one_way = one_way and now >= last - 0.0001
+		last = now
+	_check(one_way and last > 0.99, "a stretch of crest is lifted, thrown, lands and stays down; it never curls back up")
 	stage.free()
 
 
@@ -317,11 +325,11 @@ func _test_carve_trail() -> void:
 	# The strip lies on the face as it is drawn: on the steady shape where there is no lip...
 	var still := wave.surface_point(13.0, 0.55) + wave.surface_normal(13.0, 0.55) * WaveCarveTrail.LIFT_OFF
 	_check(trail.face_point(13.0, 0.55, time).distance_to(still) < 0.001, "the trail sits just off the face where it is still")
-	# ...and moving with the lip's cycle in the pocket: fully lifted when the phase is 0.
-	var lifted_time := WaveStage.LIP_PERIOD * (1.0 - 1.0 / WaveStage.LIP_SPACING)
+	# ...and moving with the lip's breath in the pocket.
+	var lifted_time := WaveStage.LIP_PERIOD * (0.25 - 1.0 / WaveStage.LIP_SPACING)
 	var thrown := wave.section_key(1.0, WaveModel.LipShape.THROWN)
 	var lifted := wave.section_key(1.0, WaveModel.LipShape.LIFTED)
-	var morphed := thrown.face_point(0.55).lerp(lifted.face_point(0.55), wave.throw_at(1.0)) + thrown.face_normal(0.55) * WaveCarveTrail.LIFT_OFF
+	var morphed := thrown.face_point(0.55).lerp(lifted.face_point(0.55), wave.throw_at(1.0) * WaveStage.lip_morph(WaveStage.lip_phase_at(1.0, lifted_time)).x) + thrown.face_normal(0.55) * WaveCarveTrail.LIFT_OFF
 	var on_face := trail.face_point(1.0, 0.55, lifted_time)
 	_check(on_face.distance_to(Vector3(-1.0, morphed.y, morphed.x)) < 0.001 and on_face.distance_to(trail.face_point(1.0, 0.55, lifted_time + WaveStage.LIP_PERIOD * 0.4)) > 0.02, "in the pocket the trail rises and falls with the face through the lip's cycle")
 
@@ -772,8 +780,8 @@ func _ride_cutback(wave: WaveModel, tuning: TuningData, at: float, hold: float, 
 			result.cut = result.cut or rider.cutting_back
 			if result.cut_u < 0.0 and rider.cutting_back:
 				result.cut_u = rider.u
-			result.snapped = result.snapped or rider.snapping
-			result.release = maxf(result.release, rider.release)
+			result.snapped = result.snapped or (rider.snapping and not result.rebounded)  # (after the whip back a lip hit is his own next move)
+			result.release = result.release if result.rebounded else maxf(result.release, rider.release)
 			result.lowest_heading = minf(result.lowest_heading, rider.theta)
 			result.closest = minf(result.closest, rider.d)
 			result.rebounded = result.rebounded or rider.rebounding
@@ -803,7 +811,7 @@ func _ride_cutback(wave: WaveModel, tuning: TuningData, at: float, hold: float, 
 ## pivots back toward the line, about 180 degrees in about 0.3 s.
 func _test_cutback(wave: WaveModel, tuning: TuningData) -> void:
 	var full := _ride_cutback(wave, tuning, 12.0, 0.0, 0.3)
-	_check(full.cut and full.start_u < Rider.CUT_TOP and not full.snapped and full.release < 0.05, "a turn started below the lip out in front is a cutback, never a hit off the lip (started %.2f up the face, committed at %.2f, release %.2f)" % [full.start_u, full.cut_u, full.release])
+	_check(full.cut and full.start_u < Rider.CUT_TOP and not full.snapped and full.release < 0.05, "a turn started below the lip out in front is a cutback, never a hit off the lip (started %.2f up the face, committed at %.2f, release %.2f, cut %s, snapped %s)" % [full.start_u, full.cut_u, full.release, full.cut, full.snapped])
 	_check(full.carve_time > 0.8 and full.carve_time < 1.7 and full.pivot < 0.5 and full.peak_u < 0.95, "held, it carves round on the rail until he faces back toward the curl, in about the footage's time (%.2f s, pivot %.2f, up to %.2f)" % [full.carve_time, full.pivot, full.peak_u])
 	_check(full.held_frames >= 12 and full.held_back < -2.4, "held on, he keeps facing back toward the curl (%.2f s, %d degrees at most)" % [full.held_frames / 60.0, rad_to_deg(full.held_back)])
 	_check(full.rail_max > 0.3 and full.rail_share > 0.6, "the rail throws a curtain of spray the whole way round (%.2f, %d%% of the carve)" % [full.rail_max, roundi(full.rail_share * 100.0)])
@@ -1129,14 +1137,22 @@ func _test_flow_and_cycle() -> void:
 	_check(event == "wipeout" and cycle.state == RideCycle.State.WIPEOUT, "caught in the foam behind the curl, he wipes out softly")
 	var events: Array[String] = []
 	var lowest := 1.0
-	for i in 60 * 9:
+	for i in 60 * 25:
 		var e := cycle.update(1.0 / 60.0, rider, model, false)
 		lowest = minf(lowest, cycle.swell)
 		if e != "":
 			events.append(e)
 		if e == "ride":
 			break
-	_check(events == ["lull", "rise", "ride"] and cycle.riding(), "a wipeout drifts into a lull, the next swell rises, and he rides again (%s)" % [events])
+	_check(events == ["lull", "set", "ride"] and cycle.riding(), "a wipeout drifts into a lull, the next set rolls in, and he rides again (%s)" % [events])
+	var seen: Array[String] = []
+	var looped := RideCycle.new(true, 7)
+	rider.place(3.0, 0.4)
+	for i in 60 * 60 * 4:
+		var e := looped.update(1.0 / 60.0, rider, model, false)
+		if e != "":
+			seen.append(e)
+	_check(seen.count("ride") >= 3 and seen.count("closeout") >= 3 and seen.count("set") >= 3, "paddle out, lineup, set, ride, close out, drift back, again and again (%s)" % [seen])
 	_check(lowest < 0.25 and is_equal_approx(cycle.swell, 1.0), "in the lull the sea goes glassy, then the wave stands back up")
 
 
@@ -1169,6 +1185,9 @@ func _test_world_events() -> void:
 	world._unhandled_input(_key(KEY_Y))
 	await process_frame
 	_check(world.cycle.state == RideCycle.State.LULL and stage.model.swell < 1.0, "Y brings a lull")
+	world._unhandled_input(_key(KEY_J))
+	_check(world.cycle.state == RideCycle.State.SET, "J brings the next set in")
+	world.lull_now()
 	_check(overlay.status().contains("lull") and overlay.status().contains("High Golden"), "the overlay says what the evening and the ride are doing")
 	world._unhandled_input(_key(KEY_H))
 	_check(not overlay.visible, "H hides the test overlay with the key list")

@@ -22,6 +22,9 @@ const TRAVEL_SPEED_FAST := 1.45
 ## fills the screen and the break stays at their back. It eases a little less far round as a barrel forms.
 ## Degrees, and the surfer's place across the screen. (Step 12 swung it 12 degrees further round, more behind his head:
 ## the view shows more of his back and of the wall running away down the line, less of the shoulder.)
+## For now the camera holds one angle and only follows him (step 13): the automatic swing, look, sway, pan and tube
+## tuck below wait for a later tuning pass (docs/progress.html).
+const CAMERA_FIXED := true
 const CAMERA_YAW_OPEN := 42.0
 const CAMERA_YAW_BARREL := 36.0
 const SURFER_SCREEN_X_OPEN := 0.47
@@ -103,6 +106,10 @@ const KEY_UP_LOW := 0.12
 const KEY_UP_HIGH := 0.5
 ## The camera test keys turn it in steps of CAMERA_STEP degrees, at most CAMERA_OFFSET_MAX either way.
 const CAMERA_STEP := 10.0
+## Floating in the lineup: meters he rises and falls, radians he rocks, and their rates (cycles a second).
+const FLOAT_BOB := 0.07
+const FLOAT_ROCK := 0.05
+const FLOAT_RATES := Vector2(0.23, 0.17)
 const CAMERA_OFFSET_MAX := 90.0
 
 ## The green room. In the tube (more than TUBE_IN of it, between TUBE_D meters of the peel point and below TUBE_U up the
@@ -208,6 +215,10 @@ func _notification(what: int) -> void:
 
 
 func _ready() -> void:
+	# The game opens with him paddling out to the lineup; a world made by a test or a capture starts riding.
+	if get_tree().current_scene == self and not UrlParams.has("nointro"):
+		cycle = RideCycle.new(true)
+		_stage.model.swell = cycle.swell
 	_add_key_help()
 	# The second fan, off the front foot, sits with the tail's fan in front of the surfer.
 	add_child(_front_spray)
@@ -260,7 +271,7 @@ func _process(delta: float) -> void:
 	_read_held_keys(delta)
 	var model := _stage.model
 	var lip_phase := WaveStage.lip_phase_at(rider.d, _time)
-	var lip_landing := lip_phase >= WaveStage.LIP_LANDING_PHASE and lip_phase < 0.92
+	var lip_landing := lip_phase >= WaveStage.LIP_LANDING_PHASE and lip_phase < WaveStage.LIP_LANDING_PHASE + 0.1
 	match cycle.update(delta, rider, model, lip_landing):
 		"wipeout":
 			_on_wipeout()
@@ -268,7 +279,10 @@ func _process(delta: float) -> void:
 			_on_lull()
 		"ride":
 			_place_rider(DEFAULT_PEEL_OFFSET)
+		"closeout", "kickout":
+			_on_ride_over()
 	model.swell = cycle.swell
+	_stage.show_set(cycle.approach())
 	if cycle.riding():
 		_moves.update(delta, rider, _ride_input)
 		rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), model, _tuning)
@@ -415,6 +429,14 @@ func lull_now() -> void:
 		_on_lull()
 
 
+## Testing: the next set starts rolling in now (from the lineup, or ending this ride).
+func set_now() -> void:
+	if cycle.riding() or cycle.state == RideCycle.State.WIPEOUT:
+		lull_now()
+	if cycle.state != RideCycle.State.SET:
+		cycle.next_set()
+
+
 ## Testing: the reef's sections stop coming (or start again).
 func toggle_reef() -> void:
 	reef.enabled = not reef.enabled
@@ -445,9 +467,15 @@ func _follow_tide_and_reef() -> void:
 	if _stage.reshaping():
 		return
 	var wave_size := clampf(tide.x + _size_offset, 0.0, 1.0)
-	var hollowness := clampf(tide.y + _hollow_offset, 0.0, 1.0)
+	var hollowness := clampf(tide.y + _hollow_offset + cycle.set_hollow, 0.0, 1.0)
+	wave_size = clampf(wave_size + cycle.set_size, 0.0, 1.0)
 	var reef_size := reef.size_delta_at(REEF_SAMPLE_D)
 	var reef_hollow := reef.hollow_delta_at(REEF_SAMPLE_D)
+	# The break is one way: while a wave is being ridden its curl only deepens. A bowl passing leaves its barrel to
+	# collapse behind the break; the wave relaxes only when it is gone (between sets).
+	if cycle.riding():
+		hollowness = maxf(hollowness, model.hollowness)
+		reef_hollow = maxf(reef_hollow, model.reef_hollow)
 	var moved := maxf(maxf(absf(wave_size - model.size), absf(hollowness - model.hollowness)),
 			maxf(absf(reef_size - model.reef_size), absf(reef_hollow - model.reef_hollow)))
 	if moved > RESHAPE_STEP:
@@ -527,8 +555,18 @@ func _on_lull() -> void:
 	_ride_input.reset()
 
 
+## The wave closed out or he kicked out over the shoulder: he sinks onto the board and drifts back out, no fuss.
+func _on_ride_over() -> void:
+	_moves.stop()
+	_spray.splash(0.4)
+	_tube_time = 0.0
+
+
 ## Down in the water (tumbling, or waiting in a lull) the rider is not ridden: he drifts back with the foam.
 func _drift_while_down(delta: float) -> void:
+	if cycle.state == RideCycle.State.DRIFT:
+		rider.d = lerpf(rider.d, DEFAULT_PEEL_OFFSET, 1.0 - exp(-delta / 1.2))
+		rider.u = lerpf(rider.u, 0.1, 1.0 - exp(-delta / 0.6))
 	if cycle.state == RideCycle.State.WIPEOUT:
 		rider.d -= DRIFT_BACK * _stage.model.peel_speed() * delta
 		rider.u = lerpf(rider.u, 0.1, 1.0 - exp(-delta / 0.6))
@@ -566,6 +604,7 @@ func _add_overlay() -> void:
 	_overlay.add_action(KEY_G, "barrel now", barrel_now)
 	_overlay.add_action(KEY_K, "wipeout", wipeout_now)
 	_overlay.add_action(KEY_Y, "lull", lull_now)
+	_overlay.add_action(KEY_J, "next set", set_now)
 	_overlay.add_group("evening")
 	_overlay.add_action(KEY_Z, "high golden", evening_phase.bind(0))
 	_overlay.add_action(KEY_X, "80s sunset", evening_phase.bind(1))
@@ -696,7 +735,10 @@ func _place_surfer_and_spray() -> void:
 	_heading_pan = lerpf(_heading_pan, CAMERA_HEADING_PAN * (1.0 - cos(rider.theta)) * 0.5, 1.0 - exp(-CAMERA_LOOK_RATE * delta))
 	var yaw := lerpf(lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing) + _look + sway - _heading_pan, CAMERA_YAW_TUBE, _tuck) + camera_offset
 	var screen_x := lerpf(lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing) + _shoulder_x, SURFER_SCREEN_X_BARREL, _tuck)
-	_stage.frame(_focus, yaw, screen_x, lerpf(WaveStage.CAMERA_FOV, CAMERA_FOV_TUBE, _tuck), lerpf(WaveStage.CAMERA_DISTANCE, CAMERA_DISTANCE_TUBE, _tuck))
+	if CAMERA_FIXED:
+		_stage.frame(_focus, CAMERA_YAW_OPEN + camera_offset, SURFER_SCREEN_X_OPEN)
+	else:
+		_stage.frame(_focus, yaw, screen_x, lerpf(WaveStage.CAMERA_FOV, CAMERA_FOV_TUBE, _tuck), lerpf(WaveStage.CAMERA_DISTANCE, CAMERA_DISTANCE_TUBE, _tuck))
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
@@ -749,6 +791,9 @@ func _sink_surfer() -> void:
 	var sit := smoothstep(0.5, 0.85, tumble) if wiping else cycle.sunk()
 	var sink := SIT_SINK * sit + TUMBLE_SINK * sin(PI * tumble)
 	var spin := Basis(Vector3.RIGHT, TAU * TUMBLE_TURNS * smoothstep(0.0, 1.0, tumble))
+	# Sitting in the lineup he floats: a slow rise and fall and a little rock with the passing water.
+	sink -= FLOAT_BOB * sit * sin(_time * FLOAT_RATES.x * TAU)
+	spin = Basis(Vector3.FORWARD, FLOAT_ROCK * sit * sin(_time * FLOAT_RATES.y * TAU + 0.7)) * spin
 	_surfer3d.transform = Transform3D(spin * _surfer3d.transform.basis, _surfer3d.transform.origin + Vector3.DOWN * sink)
 	_surfer3d.set_down(sit, curl)
 

@@ -5,8 +5,9 @@ extends Node2D
 ## stays in step with the lip the shader is animating. (The mist along the crest is in the 3D scene:
 ## see WaveMist and mist3d.gdshader.)
 
-## Meters ahead of the peel point where lips land: one every few meters through the break.
-const SPIT_POINTS: Array[float] = [-0.5, -2.6, -4.7, -7.2, -9.8]
+## Where lips land, as fractions of WaveStage.lip_fall_length behind the peel point: the lip's breath carries each
+## of these across the landing phase once a breath, so the spit stays in step with what the shader draws.
+const SPIT_POINTS: Array[float] = [0.9, 1.0, 1.1]
 const ARC_CENTRE := -122.0           # degrees on screen (0 right, negative up): forward, up and over
 const ARC_HALF_WIDTH := 40.0
 const RAYS := 18
@@ -85,7 +86,7 @@ func _init() -> void:
 func update(stage: WaveStage, at_time: float) -> void:
 	var model := stage.model
 	for i in SPIT_POINTS.size():
-		var d := SPIT_POINTS[i]
+		var d := -SPIT_POINTS[i] * WaveStage.lip_fall_length
 		var phase := stage.lip_phase_at(d, at_time)
 		var crossed := _last_phase[i] >= 0.0 and _last_phase[i] < WaveStage.LIP_LANDING_PHASE and phase >= WaveStage.LIP_LANDING_PHASE
 		_last_phase[i] = phase

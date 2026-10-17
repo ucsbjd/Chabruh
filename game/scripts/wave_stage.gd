@@ -17,12 +17,21 @@ const HORIZON_Y := 0.40                  # where the horizon sits on screen, 0 t
 ## How far down the screen the surfer's feet sit, as a fraction of the height.
 const SURFER_SCREEN_Y := 0.70
 const SEA_SCROLL_SPEED := 6.0            # meters per second the sea slides past
-## The lip's cycle (see wave3d.gdshader): seconds from one lift to the next, and meters along the crest
-## between lips in the same state. Spray that follows the lip reads the same numbers.
+## The lip's life (see wave3d.gdshader) is one way: a stretch of crest stands up LIP_LIFT_LENGTH meters ahead of the
+## peel point, is thrown at it, falls ballistically and lands lip_fall_length behind it, then is whitewater for good.
+## The crest rides through d toward the curl at the peel speed, so its phase only ever grows: nothing un-curls. A small
+## breath (LIP_PULSE every LIP_PERIOD seconds, travelling LIP_SPACING along the crest) keeps it alive and paces the
+## spit; it is kept well below the rate the peel carries the crest through the phases, so it never runs backward.
 const LIP_PERIOD := 5.5
 const LIP_SPACING := 15.0
-## How far into the cycle the lip has fallen and landed, where the spit happens.
+const LIP_PULSE := 0.05
+const LIP_LIFT_LENGTH := 4.0
+const LIP_THROWN_PHASE := 0.38
+## The phase at which the lip has fallen and landed, where the spit happens.
 const LIP_LANDING_PHASE := 0.68
+const LIP_GRAVITY := 9.8
+## Meters behind the peel point where the lip lands: the peel runs on while the jet falls (set from the model).
+static var lip_fall_length := 5.0
 ## A reshape (the wave following the reef or the tide) is built over several frames, this many microseconds a frame.
 const RESHAPE_BUDGET_USEC := 2500
 ## The real-time surfer is also drawn alone, at MASK_SCALE of the screen's size, on the render layer SURFER_LAYER (a bit
@@ -116,6 +125,8 @@ func _ready() -> void:
 	_water_material.set_shader_parameter("profile_d1", WaveModel.PROFILE_AHEAD)
 	_wave_material.set_shader_parameter("lip_period", LIP_PERIOD)
 	_wave_material.set_shader_parameter("lip_spacing", LIP_SPACING)
+	_wave_material.set_shader_parameter("lip_pulse", LIP_PULSE)
+	_wave_material.set_shader_parameter("lip_lift_length", LIP_LIFT_LENGTH)
 	# (the surfer's silhouette is drawn from the same world as the wave, the surfer alone)
 	_mask_viewport.world_3d = _viewport.find_world_3d()
 	resized.connect(_fit_viewport)
@@ -204,19 +215,34 @@ func feed_reef() -> void:
 		material.set_shader_parameter("reef_a", a)
 		material.set_shader_parameter("reef_b", b)
 		material.set_shader_parameter("swell", model.swell)
+	# The jet falls the crest's height in sqrt(2h/g) while the break peels on down the line.
+	lip_fall_length = clampf(model.peel_speed() * sqrt(2.0 * model.height() / LIP_GRAVITY), 2.5, 9.0)
+	_wave_material.set_shader_parameter("lip_fall_length", lip_fall_length)
+	_wave_material.set_shader_parameter("sea_from", model.shoulder_length() * 0.55)
+	_wave_material.set_shader_parameter("ahead_end", WaveModel.PROFILE_AHEAD)
 
 
-## Where in its cycle the lip is at d, 0 to 1, right now: the same number the shader computes.
-## It reaches LIP_LANDING_PHASE as the lip falls.
+## A set coming in from the horizon, 0 (none) to 1 (here), drawn on the sea.
+func show_set(approach: float) -> void:
+	_water_material.set_shader_parameter("set_approach", approach)
+
+
+## How far through its one-way life the crest at d is, 0 (standing up, ahead) to 1 (long fallen, whitewater): the same
+## number the shader computes. LIP_THROWN_PHASE at the peel point, LIP_LANDING_PHASE where it lands.
 static func lip_phase_at(d: float, at_time: float) -> float:
-	return fposmod(at_time / LIP_PERIOD + d / LIP_SPACING, 1.0)
+	var base: float
+	if d > 0.0:
+		base = LIP_THROWN_PHASE * (1.0 - d / LIP_LIFT_LENGTH)
+	else:
+		base = LIP_THROWN_PHASE + (LIP_LANDING_PHASE - LIP_THROWN_PHASE) * (-d / lip_fall_length)
+	return clampf(base + LIP_PULSE * sin(TAU * (at_time / LIP_PERIOD + d / LIP_SPACING)), 0.0, 1.0)
 
 
 ## How far a lip at `phase` of its cycle has lifted the wave (x) and dropped it (y), 0 to 1 each before the amount of lip
 ## there: the weights wave3d.gdshader's vertex morph uses, so whatever sits on the face can move with it.
 static func lip_morph(phase: float) -> Vector2:
-	var lift := smoothstep(0.86, 1.0, phase) + 1.0 - smoothstep(0.0, 0.28, phase)
-	var fall := smoothstep(0.50, 0.66, phase) * (1.0 - smoothstep(0.74, 0.92, phase))
+	var lift := 1.0 - smoothstep(0.0, LIP_THROWN_PHASE, phase)
+	var fall := smoothstep(0.46, LIP_LANDING_PHASE, phase)
 	return Vector2(lift, fall)
 
 

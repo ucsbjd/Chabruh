@@ -20,7 +20,7 @@ extends SceneTree
 ##                     are then ignored); without it the mood option is used and the evening is held
 ##   reef=on           let reef sections come by themselves (off by default, so captures repeat)
 ##   events=bowl@0,wipeout@200   at those frames: a section (wall, channel, race, bowl) sent in from down the line, or
-##                     barrel (G), wipeout (K), lull (Y), or pose:sit to hold one of the 3D surfer's baked poses (pose:
+##                     barrel (G), wipeout (K), lull (Y), set (J), or pose:sit to hold one of the 3D surfer's baked poses (pose:
 ##                     alone lets go again)
 ##   overlay=no        hide the test buttons and key list
 ## (peel is how many meters ahead of the peel point the surfer is.) It also prints the average frame
@@ -161,6 +161,8 @@ func _trigger(world: Control, event: String) -> void:
 		world.wipeout_now()
 	elif event == "lull":
 		world.lull_now()
+	elif event == "set":
+		world.set_now()
 	elif event.begins_with("pose:") and world._surfer3d:
 		world._surfer3d.held_pose = event.trim_prefix("pose:")
 

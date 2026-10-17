@@ -115,8 +115,9 @@ const CUTBACK_REACH := 3.0
 const CUT_PAST := -1.6
 const CUT_DONE := -0.5
 const REBOUND_TIME := 0.15
-const REBOUND_OMEGA := 10.0
-const REBOUND_ACCEL := 90.0
+const REBOUND_OMEGA := 18.0
+const REBOUND_ACCEL := 200.0
+const CUT_BACK_MAX := 2.5            # seconds he may run back toward the curl before the whip comes anyway
 ## Pumping (the 300 fps footage): running behind where he is steered, he pumps for speed down the line, little turns
 ## up and down the face with the knees, one every PUMP_PERIOD seconds, PUMP_SWING radians each way, more the further
 ## behind he is (from PUMP_SLACK to PUMP_RANGE meters behind), folding PUMP_CROUCH as the nose goes down.
@@ -161,7 +162,7 @@ const RELEASE_TURN := 1.8
 const RELEASE_FROM := 0.45
 const RELEASE_STEEP := 1.05
 const APPROACH_MEMORY := 0.8
-const STALL_SPEED := 0.3
+const STALL_SPEED := 0.08
 const RELEASE_TIME := 0.15
 const RELEASE_ATTACK := 7.0
 const RELEASE_DECAY := 3.0
@@ -183,7 +184,7 @@ const FLOAT_FADE_LOW := 3.0
 const FLOAT_END := 0.45
 const FLOAT_QUIET := 0.7
 const FLOAT_SINK := 2.0
-const FLOAT_CARRY := 0.75
+const FLOAT_CARRY := 1.0
 const CARRY_FADE := 0.5
 const THETA_MAX := 1.5               # almost straight up it
 const COMPRESSION_K := 100.0         # hips: slightly underdamped, about 120 ms (natural frequency 10 rad/s)
@@ -345,6 +346,7 @@ var _press_curve := 0.0              # m/s squared the concave face adds to the 
 var _push_along := 0.0               # m/s squared of drive (positive) or drag (negative) along the board, smoothed
 var _pivot := 0.0                    # rad/s the board swings round on its tail while it is light, smoothed
 var _pump_phase := 0.0
+var _cut_back_time := 0.0            # seconds running back toward the curl in a cutback
 var _rebounding := false             # round in a cutback: the water is pivoting the board back
 var _load_rhythm := 0.0              # the crouch that the rhythm of the load asks for, see _update_crouch
 var _turning_g := 0.0                # the sideways pull of the carve, in g
@@ -855,7 +857,7 @@ func _update_cycle(delta: float) -> void:
 ## drops once the nose is nearly where it was going. Once started it carries through: a snap cannot be taken back halfway.
 func _update_snap(at_lip: float, target: float) -> void:
 	if not snapping:
-		snapping = at_lip > 0.3 and theta > SNAP_HEADING and target - theta < -SNAP_START and not cutting_back and not _carving_down
+		snapping = at_lip > 0.3 and theta > SNAP_HEADING and target - theta < -SNAP_START and not cutting_back and not _carving_down and _after_rebound < 0.05
 		_snap_to = minf(target, -SNAP_DOWN)
 	elif theta < _snap_to + SNAP_RELEASE or cutting_back or u < LIP_FROM - 0.2:
 		snapping = false
@@ -889,7 +891,9 @@ func _update_cutback(push: float, delta: float) -> void:
 	if not _rebounding:
 		# (he sees the foam coming: the rebound starts early enough to finish before he gets there)
 		var foam_close := d + minf(vel_d, 0.0) * REBOUND_TIME * 2.0 < CUT_FOAM
-		if theta < CUT_PAST and (not holding or foam_close or u < 0.12):
+		# (round past CUT_PAST he runs on back toward the curl, held or not, until the foam or the bottom whips him back)
+		_cut_back_time = _cut_back_time + delta if theta < CUT_PAST else 0.0
+		if theta < CUT_PAST and (foam_close or u < 0.12 or _cut_back_time > CUT_BACK_MAX):
 			# (the water knocks the board straight back toward the line: no slow fade of the push)
 			_rebounding = true
 			_stick = 0.0

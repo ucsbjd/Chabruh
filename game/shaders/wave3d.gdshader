@@ -21,8 +21,11 @@ uniform float time = 0.0;
 uniform vec3 sun_dir = vec3(-0.62, 0.20, -0.76);   // toward the sun: ahead, a little up, offshore
 
 // Motion. Each of these is a feel dial.
-uniform float lip_period = 5.5;      // seconds from one lip lifting to the next
-uniform float lip_spacing = 15.0;    // meters along the crest between lips in the same state
+uniform float lip_period = 5.5;      // seconds per breath of the lip
+uniform float lip_spacing = 15.0;    // meters along the crest a breath travels
+uniform float lip_pulse = 0.05;      // how much the breath moves the phase (kept below the peel's own rate)
+uniform float lip_lift_length = 4.0; // meters ahead of the peel point the lip starts to stand up
+uniform float lip_fall_length = 5.0; // meters behind it where the falling lip lands
 uniform float flow_speed = 1.1;      // meters per second the face's pattern climbs
 uniform float slide_speed = 2.6;     // meters per second the pattern slides along the crest
 uniform float boil_height = 1.5;     // meters the whitewater heaves
@@ -39,6 +42,12 @@ uniform vec4 hollow_glow : source_color;
 uniform vec4 foam_lit : source_color;
 uniform vec4 foam_shade : source_color;
 uniform vec4 sea_horizon : source_color;
+uniform vec4 swell_top : source_color;
+uniform vec4 swell_deep : source_color;
+// Down the line the wall settles into open sea: from sea_from (meters ahead) it takes the sea's colour, and by
+// ahead_end (where the mesh stops) it lies flat on the water, so it ends without an edge.
+uniform float sea_from = 20.0;
+uniform float ahead_end = 60.0;
 
 // The reef (SectionDirector): two sections as (centre d, half width, height gain, kind), where kind is 0 wall,
 // 1 channel, 2 racecourse, 3 bowl; and the swell, the whole wave's height as a factor (near 0 in a lull).
@@ -67,6 +76,7 @@ const float SUCK_TOP = 0.45;
 
 varying vec3 wpos;
 varying float crash;
+varying float sea_like;
 varying float whitewater_here;
 varying float bowl_here;
 
@@ -74,13 +84,13 @@ void vertex() {
 	float lip_here = UV2.x;
 	float d = -VERTEX.x;
 
-	// One cycle: lifted (the lip stands up and pitches), thrown (out over the trough), landed (it has
-	// fallen into the foam), then lifted again. The phase slides along the crest, so at any moment
-	// the lips along the wave are at different points in the cycle. WaveStage.lip_morph() repeats the lift and fall for
-	// things that sit on the face (the carve trail), so change them together.
-	float phase = fract(time / lip_period + d / lip_spacing);
-	float lift = (smoothstep(0.86, 1.0, phase) + 1.0 - smoothstep(0.0, 0.28, phase)) * lip_here;
-	float fall = smoothstep(0.50, 0.66, phase) * (1.0 - smoothstep(0.74, 0.92, phase)) * lip_here;
+	// One way only: lifted ahead of the peel point, thrown at it, fallen and landed behind it, and it stays down
+	// (whitewater). The crest runs through d toward the curl, so it never lifts again. WaveStage.lip_phase_at() and
+	// lip_morph() repeat this for the spit, the rider and the carve trail, so change them together.
+	float base = d > 0.0 ? 0.38 * (1.0 - d / lip_lift_length) : 0.38 + 0.30 * (-d / lip_fall_length);
+	float phase = clamp(base + lip_pulse * sin(6.2831853 * (time / lip_period + d / lip_spacing)), 0.0, 1.0);
+	float lift = (1.0 - smoothstep(0.0, 0.38, phase)) * lip_here;
+	float fall = smoothstep(0.46, 0.68, phase) * lip_here;
 	vec2 thrown = VERTEX.yz;
 	VERTEX.yz = thrown + (CUSTOM0.xy - thrown) * lift + (CUSTOM0.zw - thrown) * fall;
 	crash = fall;
@@ -88,6 +98,8 @@ void vertex() {
 	// The reef: the wall stands taller or lower where a section is, and over a bowl the trough drains in toward it.
 	bowl_here = reef_kind(d, 3.0);
 	VERTEX.yz *= reef_scale(d);
+	sea_like = smoothstep(sea_from, ahead_end * 0.92, d);
+	VERTEX.y *= 1.0 - smoothstep(ahead_end * 0.7, ahead_end, d);
 	VERTEX.z *= 1.0 - SUCK_OUT * bowl_here * (1.0 - smoothstep(0.0, SUCK_TOP, COLOR.r));
 
 	// The whitewater heaves and rolls toward the beach. The foot of it stays on the water.
@@ -188,8 +200,9 @@ void fragment() {
 	float no_foam = 1.0 - smoothstep(0.05, 0.4, foam);
 	col = mix(col, wave_rim.rgb, max(rim, crest_line) * no_foam);
 
-	// Far parts fade into the haze.
-	col = mix(col, sea_horizon.rgb, smoothstep(45.0, 240.0, dist) * 0.85);
+	// Down the line it becomes the sea it rises from, and far parts fade into the haze exactly as the sea does.
+	col = mix(col, mix(swell_deep.rgb, swell_top.rgb, 0.45), sea_like * 0.85);
+	col = mix(col, sea_horizon.rgb, smoothstep(60.0, 420.0, dist));
 
 	ALBEDO = col;
 }

@@ -73,6 +73,9 @@ const FOLD_BONES := [["spine05", 0.3], ["spine04", 0.25], ["spine03", 0.2], ["sp
 const LAYBACK := 0.55
 const LAYBACK_TOWARD := Vector3(0.94, 0.0, 0.34)
 const REBOUND_FOLD := 0.9
+## A whip stands the board's nose up this far (radians) over WHIP_TIME seconds, and lays him back toward the tail.
+const WHIP_NOSE_UP := 0.55
+const WHIP_TIME := 0.06
 const REBOUND_TOWARD := Vector3(-0.9, 0.0, -0.44)
 ## Where the hands go in the two moves off the top (the gold standard). Relative to the shoulder, in his body's own
 ## frame (up along his balance, so "straight up" is over his head however the board is tilted on the face; -X toward
@@ -110,6 +113,9 @@ const DIVE_YAW := 1.0
 const DIVE_SHIFT := 0.12
 ## From just behind the back foot (the pivot of a turn) to the middle of the board, meters.
 const PIVOT_TO_CENTRE := 0.48
+## The board's half width at its middle, and how far under the surface its ends and rails may go (meters).
+const BOARD_HALF_WIDTH := 0.25
+const BOARD_DIP := 0.03
 ## How far the turning lean (radians) has to go for a turn pose to show fully.
 const CARVE_FULL := 0.6
 ## How far the hips sink below the deepest baked pose when he is fully compressed, meters (the footage's drive along the
@@ -148,6 +154,7 @@ var _arm := {"point": 0.0, "wings": 0.0, "top": 0.0, "drag": 0.0, "floater": 0.0
 	"lip_reach": 0.0, "lip_up": 0.0, "cut_rail": 0.0, "cut_sweep": 0.0, "cut_point": 0.0, "rebound": 0.0}  # what each arm is doing
 var _move := {"lip_reach": 0.0, "lip_up": 0.0, "cut_rail": 0.0, "cut_sweep": 0.0, "cut_point": 0.0, "rebound": 0.0}  # the move phases, smoothed
 var _layback := 0.0  # 0 to 1: laid back over the tail as the board pivots at the lip
+var _whip := 0.0  # 0 to 1: the board stood up on its tail in a snap or a rebound
 var _rebound_fold := 0.0  # 0 to 1: folded forward over the front knee as the board is knocked back
 var _t_crest := Vector3.LEFT  # down the line, along the face here
 var _t_face := Vector3.UP  # up the face here
@@ -286,7 +293,11 @@ func follow(rider: Rider, model: WaveModel, delta: float) -> void:
 	_driven = true
 	# A floater: high on the face, running along it, not turning hard.
 	var floater := smoothstep(0.86, 0.94, rider.u) * (1.0 - clampf(absf(rider.theta) / 0.5, 0.0, 1.0)) * (1.0 - clampf(absf(rider.omega) / 1.5, 0.0, 1.0))
-	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll, rider.stall * NOSE_LIFT, floater)
+	# A whip (the snap at the lip, the cutback's rebound) stands the board up on its tail: nose high, his weight over the
+	# back foot, pivoting against it.
+	var whip := 1.0 if rider.snapping or rider.rebounding else 0.0
+	_whip = lerpf(_whip, whip, 1.0 - exp(-delta / WHIP_TIME))
+	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll, maxf(rider.stall * NOSE_LIFT, _whip * WHIP_NOSE_UP), floater)
 	_balance = (transform.basis.inverse() * rider.balance).normalized()
 	# Turn poses come from the lean that turns him: toward the wave low on the face (bottom turn), toward the beach
 	# high on it (top turn). The bottom turn's deep hip hinge also shows when he is deeply compressed low on the face,
@@ -315,8 +326,8 @@ func follow(rider: Rider, model: WaveModel, delta: float) -> void:
 	_sink = rider.compression
 	_fold = smoothstep(0.45, 0.9, rider.compression) * clampf((1.0 - rider.u) / 0.5, 0.0, 1.0) * (1.0 - barrel * 0.5)
 	_follow_moves(rider, delta)
-	_layback = _move.lip_up * smoothstep(0.6, 0.85, rider.u)
-	_rebound_fold = _move.rebound
+	_layback = maxf(_move.lip_up * smoothstep(0.6, 0.85, rider.u), _whip)
+	_rebound_fold = _move.rebound * (1.0 - _whip)
 	# In the tube, settling by the curl, and knocked back in a cutback, he makes himself compact: the knees come together.
 	_compact = maxf(maxf(barrel, _move.rebound * 0.8), rider.tuck * 0.7)
 	_tuck = maxf(bottom, _compact)
@@ -423,6 +434,19 @@ func _place(model: WaveModel, d: float, u: float, theta: float, roll: float, nos
 	# swings round to point where he is going, so the board centre sits ahead of the pivot along the board.
 	var pivot := model.surface_point(d, u).lerp(model.crest_point(d), lift * FLOAT_LIFT)
 	transform = Transform3D(basis, pivot - basis.x * PIVOT_TO_CENTRE)
+	# Fibreglass floats: a straight board on a concave face, rolled onto its rail or pitched, would cut into the water
+	# at its ends, so lift it along the face's normal until no end or rail is more than BOARD_DIP under.
+	var dip := 0.0
+	var face_length := maxf(model.face_length_at(d, u), 0.5)
+	for corner: Vector3 in [BOARD_NOSE, BOARD_TAIL, Vector3(-BOARD_SHIFT, 0.0, BOARD_HALF_WIDTH), Vector3(-BOARD_SHIFT, 0.0, -BOARD_HALF_WIDTH)]:
+		var p := transform * corner
+		var off := p - pivot
+		var d_p := d + off.dot(t_crest)
+		var u_p := clampf(u + off.dot(t_face) / face_length, 0.0, 1.0)
+		var q := model.surface_point(d_p, u_p)
+		dip = maxf(dip, (q - p).dot(model.surface_normal(d_p, u_p)) - BOARD_DIP)
+	if dip > 0.0:
+		transform.origin += normal * dip
 
 
 ## Blends the baked poses into the bones and adds the head-and-chest lead.

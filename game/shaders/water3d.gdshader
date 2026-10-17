@@ -29,6 +29,8 @@ uniform vec3 sun_dir = vec3(-0.62, 0.20, -0.76);
 uniform vec4 reef_a = vec4(1000.0, 0.001, 0.0, 0.0);
 uniform vec4 reef_b = vec4(1000.0, 0.001, 0.0, 0.0);
 uniform float swell = 1.0;
+// A set rolling in from the horizon, 0 (none) to 1 (here): a few long lines of swell come toward the lineup.
+uniform float set_approach = 0.0;
 
 float reef_weight(vec4 r, float d) {
 	return 1.0 - smoothstep(0.0, 1.0, abs(d - r.x) / r.y);
@@ -78,6 +80,21 @@ void fragment() {
 	float width = 0.035 + fwidth(cell) * 1.4;
 	float lace = (1.0 - smoothstep(0.0, width, cell)) * (1.0 - smoothstep(70.0, 260.0, dist));
 	col = mix(col, mix(swell_line.rgb, foam_lit.rgb, 0.55), lace * 0.7);
+
+	// The set: three long dark lines with a pale top edge, travelling in from the horizon (offshore is -z) as it comes.
+	if (set_approach > 0.0) {
+		float front = mix(-420.0, -8.0, set_approach);
+		float wobble = (texture(noise_warp, vec2(wpos.x * 0.004, 0.3)).r - 0.5) * 18.0;
+		float behind = front - (wpos.z + wobble);          // meters the point lies offshore of the first line
+		float lines = 0.0;
+		for (int i = 0; i < 3; i++) {
+			float off = behind - float(i) * 28.0;
+			float body = smoothstep(-3.0, 0.0, off) * (1.0 - smoothstep(0.0, 7.0 + dist * 0.03, off));
+			lines = max(lines, body * (1.0 - float(i) * 0.25));
+		}
+		float fade_in = smoothstep(0.0, 0.15, set_approach) * (1.0 - smoothstep(0.85, 1.0, set_approach));
+		col = mix(col, mix(wave_shadow.rgb, swell_deep.rgb, 0.4), lines * 0.55 * fade_in);
+	}
 
 	// Shadow and foam around the base of the wave, where the profile says it is.
 	float d = clamp((-wpos.x - profile_d0) / (profile_d1 - profile_d0), 0.0, 1.0);

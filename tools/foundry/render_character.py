@@ -42,6 +42,7 @@ if len(argv) > 3:  # a debug camera yaw in degrees (90 is a side view), to inspe
 # Board-local layout. The deck top is DECK_Z above the origin; ankles sit ANKLE_H over the sole.
 DECK_Z = 0.08
 SIT_HIP = 0.12  # sitting astride the board, the hip joints are this far above the deck
+PRONE_HIP = 0.13  # lying on the board to paddle, the hip joints are this far above the deck
 SPINE_BEND_WEIGHTS = (0.35, 0.30, 0.20, 0.10, 0.05)  # spine05 (lowest) to spine01
 FOOT_X = {"L": -0.40, "R": 0.36}  # left foot forward, toward the nose at -X
 
@@ -93,6 +94,16 @@ if GLB_PATH:  # level board (its roll and pitch come from the game's physics); t
                   look=-55, neck_back=0, hands_at="board", hl=(-0.28, -0.19, DECK_Z + 0.04), hr=(-0.28, 0.19, DECK_Z + 0.04),
                   el=(0.15, -0.45, 0.0), er=(0.15, 0.45, 0.0),
                   fl=(-0.40, -0.28, -0.32), fr=(-0.40, 0.28, -0.32), kl=(-1.0, -0.3, 0.4), kr=(-1.0, 0.3, 0.4))]
+    # Paddling out: lying on the board facing the nose (prone: tipped forward that many degrees about the hips, which
+    # sit hip_x along the board), chest arched up, head up looking ahead, legs together along the deck to the tail.
+    # Two phases of the stroke, one arm reaching forward into the water while the other pushes back past the hip; the
+    # game swings between them.
+    _prone = dict(_named["trim"], roll=0, pitch=0, prone=-84, hip_x=0.30, yaw=90, down=0, lift=0, bend=-14, hinge=0,
+                  lean=0, twist=0, look=0, neck_back=38, hands_at="board", fingers=0.4,
+                  el=(0.0, -0.45, 0.35), er=(0.0, 0.45, 0.35),
+                  fl=(1.27, -0.09, DECK_Z + 0.06), fr=(1.27, 0.09, DECK_Z + 0.06), kl=(0.75, -0.15, 1.0), kr=(0.75, 0.15, 1.0))
+    POSES += [dict(_prone, name="paddle_a", hl=(-0.80, -0.42, -0.22), hr=(0.15, 0.40, -0.12)),
+              dict(_prone, name="paddle_b", hl=(0.15, -0.40, -0.12), hr=(-0.80, 0.42, -0.22))]
 POSES = POSES[:POSE_LIMIT]
 
 
@@ -817,9 +828,10 @@ def main():
         reset_pose(rig)
         for key, (loc, pole) in rest_feet.items():
             targets[key].location, poles[key].location = loc, pole
-        if pose.get("sit"):  # astride the board: the hips down on the deck, the feet hanging in the water
-            hips0 = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
-            pose = dict(pose, down=hips0.z - (DECK_Z + SIT_HIP))
+        if pose.get("sit") or "prone" in pose:  # astride the board or lying on it: the feet go where the pose says
+            if pose.get("sit"):  # (astride, the hips come down onto the deck)
+                hips0 = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
+                pose = dict(pose, down=hips0.z - (DECK_Z + SIT_HIP))
             for s in "LR":
                 targets["foot" + s].location = Vector(pose["f" + s.lower()])
                 poles["foot" + s].location = Vector(pose["k" + s.lower()])
@@ -845,6 +857,11 @@ def main():
             # Hinge over at the hips (the pelvis tips toward the wave, the feet stay pinned), as a deep bottom turn does.
             hips = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
             rotate_bone(rig, "root", rot("X", -pose.get("hinge", 0.0)), pivot=hips)
+            if "prone" in pose:  # tip him forward onto his chest, then lay his hips on the deck
+                rotate_bone(rig, "root", rot("Y", pose["prone"]), pivot=hips)
+                hips = (world(rig, "upperleg01.L").translation + world(rig, "upperleg01.R").translation) / 2
+                set_world(rig, "root", Matrix.Translation(Vector((pose["hip_x"], 0.0, DECK_Z + PRONE_HIP)) - hips) @ world(rig, "root"))
+                update()
         parts = ["spine05", "spine04", "spine03", "spine02", "spine01"]
         # Forward flexion is weighted toward the lower back, so the upper back (and the tattoo) stays turned to the camera.
         if not raw:
@@ -852,7 +869,7 @@ def main():
                 R = rot("X", -pose["bend"] * wb) @ rot("Y", -pose["lean"] / 5) @ rot("Z", pose["twist"] / 5)
                 rotate_bone(rig, name, R)
             # The back knee tucks in toward the front leg by knee_r_in (0 to 1).
-            if not pose.get("sit"):
+            if not pose.get("sit") and "prone" not in pose:
                 poles["footR"].location.x = FOOT_X["R"] - 0.10 - 1.5 * pose.get("knee_r_in", 0.0)
             for name, share in (("neck01", 0.2), ("neck02", 0.2), ("neck03", 0.2), ("head", 0.4)):
                 rotate_bone(rig, name, rot("X", pose.get("neck_back", 0.0) * share) @ rot("Z", pose["look"] * share - pose["twist"] * share))
@@ -879,7 +896,7 @@ def main():
                 print("foundry: saved", BLEND_PATH)
                 return
         # Lay each sole flat on the deck: bone Y toward the toes, the up axis along the board's normal.
-        for s in ("LR" if not (raw and "foot.L" in raw["bones"]) and not pose.get("sit") else ""):
+        for s in ("LR" if not (raw and "foot.L" in raw["bones"]) and not pose.get("sit") and "prone" not in pose else ""):
             name = f"foot.{s}"
             fwd = board.matrix_world.to_3x3() @ Matrix.Rotation(math.radians(24), 3, "Z") @ Vector((0, 1, -0.12))
             nrm = board.matrix_world.to_3x3() @ Vector((0, 0, 1))

@@ -19,19 +19,20 @@ const SURFER_SCREEN_Y := 0.70
 const SEA_SCROLL_SPEED := 6.0            # meters per second the sea slides past
 ## The lip's life (see wave3d.gdshader) is one way: a stretch of crest stands up LIP_LIFT_LENGTH meters ahead of the
 ## peel point, is thrown at it, falls ballistically and lands lip_fall_length behind it, then is whitewater for good.
-## The crest rides through d toward the curl at the peel speed, so its phase only ever grows: nothing un-curls. A small
-## breath (LIP_PULSE every LIP_PERIOD seconds, travelling LIP_SPACING along the crest) keeps it alive and paces the
-## spit; it is kept well below the rate the peel carries the crest through the phases, so it never runs backward.
-const LIP_PERIOD := 5.5
-const LIP_SPACING := 15.0
-const LIP_PULSE := 0.05
+## The crest rides through d toward the curl at the peel speed, so its phase only ever grows: nothing un-curls. Each
+## stretch of crest throws a little harder or softer than the next (LIP_SURGE, every LIP_SPACING meters), and those surges
+## belong to the water: they travel toward the curl with it (lip_travel, the meters the break has peeled), so the lip is
+## seen pitching and landing stretch by stretch, and the spit fires as each one lands.
+const LIP_SPACING := 9.0
+const LIP_SURGE := 0.1
 const LIP_LIFT_LENGTH := 4.0
 const LIP_THROWN_PHASE := 0.38
 ## The phase at which the lip has fallen and landed, where the spit happens.
 const LIP_LANDING_PHASE := 0.68
-const LIP_GRAVITY := 9.8
-## Meters behind the peel point where the lip lands: the peel runs on while the jet falls (set from the model).
-static var lip_fall_length := 5.0
+## Meters behind the peel point where the lip lands (WaveModel.lip_fall, set as the mesh is built), and the meters the
+## break has peeled so far (the surges ride with the water).
+static var lip_fall_length := 6.0
+static var lip_travel := 0.0
 ## A reshape (the wave following the reef or the tide) is built over several frames, this many microseconds a frame.
 const RESHAPE_BUDGET_USEC := 2500
 ## The real-time surfer is also drawn alone, at MASK_SCALE of the screen's size, on the render layer SURFER_LAYER (a bit
@@ -123,9 +124,8 @@ func _ready() -> void:
 	_water_material.set_shader_parameter("profile", _profile)
 	_water_material.set_shader_parameter("profile_d0", -WaveModel.PROFILE_BEHIND)
 	_water_material.set_shader_parameter("profile_d1", WaveModel.PROFILE_AHEAD)
-	_wave_material.set_shader_parameter("lip_period", LIP_PERIOD)
 	_wave_material.set_shader_parameter("lip_spacing", LIP_SPACING)
-	_wave_material.set_shader_parameter("lip_pulse", LIP_PULSE)
+	_wave_material.set_shader_parameter("lip_surge", LIP_SURGE)
 	_wave_material.set_shader_parameter("lip_lift_length", LIP_LIFT_LENGTH)
 	# (the surfer's silhouette is drawn from the same world as the wave, the surfer alone)
 	_mask_viewport.world_3d = _viewport.find_world_3d()
@@ -135,6 +135,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	lip_travel += model.peel_speed() * delta
 	_scroll += SEA_SCROLL_SPEED * delta
 	_water_material.set_shader_parameter("scroll", _scroll)
 	_advance_reshape()
@@ -168,6 +169,7 @@ func materials() -> Array[ShaderMaterial]:
 func rebuild() -> void:
 	_mesh_job = null
 	_mist_job = null
+	_take_fall()
 	_wave_mesh.mesh = WaveMesh.build(model)
 	_mist_mesh.mesh = WaveMist.build(model)
 	_profile.update(model.bake_profile())
@@ -178,8 +180,16 @@ func rebuild() -> void:
 ## the new mesh replaces the old one when it is done. Leave the model's size and hollowness alone until reshaping()
 ## is false.
 func reshape() -> void:
+	_take_fall()
 	_mesh_job = WaveMeshBuilder.new(model)
 	_mist_job = WaveMistBuilder.new(model)
+
+
+## Where the lip lands is baked into the mesh (the wall collapses there), so it changes only with the mesh.
+func _take_fall() -> void:
+	model.refresh_fall()
+	lip_fall_length = model.lip_fall
+	_wave_material.set_shader_parameter("lip_fall_length", lip_fall_length)
 
 
 ## Whether a reshape is still being built.
@@ -215,9 +225,7 @@ func feed_reef() -> void:
 		material.set_shader_parameter("reef_a", a)
 		material.set_shader_parameter("reef_b", b)
 		material.set_shader_parameter("swell", model.swell)
-	# The jet falls the crest's height in sqrt(2h/g) while the break peels on down the line.
-	lip_fall_length = clampf(model.peel_speed() * sqrt(2.0 * model.height() / LIP_GRAVITY), 2.5, 9.0)
-	_wave_material.set_shader_parameter("lip_fall_length", lip_fall_length)
+	_wave_material.set_shader_parameter("lip_travel", lip_travel)
 	_wave_material.set_shader_parameter("sea_from", model.shoulder_length() * 0.55)
 	_wave_material.set_shader_parameter("ahead_end", WaveModel.PROFILE_AHEAD)
 
@@ -227,15 +235,30 @@ func show_set(approach: float) -> void:
 	_water_material.set_shader_parameter("set_approach", approach)
 
 
-## How far through its one-way life the crest at d is, 0 (standing up, ahead) to 1 (long fallen, whitewater): the same
-## number the shader computes. LIP_THROWN_PHASE at the peel point, LIP_LANDING_PHASE where it lands.
-static func lip_phase_at(d: float, at_time: float) -> float:
+## Moves the whole wave `shift` meters toward the beach from where it breaks (a set rolling in from offshore, or a spent
+## wave rolling on), without rebuilding it, and closes its wall out into whitewater by `closeout` (0 to 1). The model
+## (and so the rider) stays where the wave breaks; only what is drawn moves.
+func place_wave(shift: float, closeout: float) -> void:
+	for node: Node3D in [_wave_mesh, _mist_mesh, carve_trail]:
+		node.position.z = shift
+	_water_material.set_shader_parameter("wave_shift", shift)
+	_wave_material.set_shader_parameter("closeout", closeout)
+
+
+## Whether the wave is where it breaks (not rolling in or away), so spray and the rider can follow it.
+func wave_home() -> bool:
+	return absf(_wave_mesh.position.z) < 0.5
+
+
+## How far through its one-way life the crest at d is, 0 (standing up, ahead) to 1 (long fallen, whitewater), once the
+## break has peeled `travel` meters (lip_travel now): the same number the shader computes. LIP_THROWN_PHASE at the peel point, LIP_LANDING_PHASE where it lands.
+static func lip_phase_at(d: float, travel: float) -> float:
 	var base: float
 	if d > 0.0:
 		base = LIP_THROWN_PHASE * (1.0 - d / LIP_LIFT_LENGTH)
 	else:
 		base = LIP_THROWN_PHASE + (LIP_LANDING_PHASE - LIP_THROWN_PHASE) * (-d / lip_fall_length)
-	return clampf(base + LIP_PULSE * sin(TAU * (at_time / LIP_PERIOD + d / LIP_SPACING)), 0.0, 1.0)
+	return clampf(base + LIP_SURGE * sin(TAU * (d + travel) / LIP_SPACING), 0.0, 1.0)
 
 
 ## How far a lip at `phase` of its cycle has lifted the wave (x) and dropped it (y), 0 to 1 each before the amount of lip

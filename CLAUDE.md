@@ -177,6 +177,24 @@ play the moves). **Two fingers on the trackpad (and later the phone) are the sur
   and the status line shows the offset (`world.camera_offset`, `capture.ps1 -Camera`; -30 looks straight at the wave
   from the beach like the footage).
 
+## The wave cycle and the one-way break (step 13)
+
+- **The loop** (`RideCycle`): paddle out (the prone `paddle_a`/`paddle_b` poses, blended by the stroke) → sit in the lineup
+  (9 to 15 s, floating) → the set's wave rolls in from `APPROACH_FAR` offshore and grows (`wave_shift()`, drawn by
+  `WaveStage.place_wave()` without a rebuild; the model and the rider stay where it breaks) while he paddles to catch it
+  → ride (28 to 40 s, each set wanders `SET_SIZE`/`SET_HOLLOW` on the tide) → close out (`closeout()`, the wall turns to
+  foam down the line) or kick out past `KICKOUT_D` → the spent wave rolls on toward the beach and he paddles back. Test
+  keys K, Y, J (next set); capture events `set`, `closeout`.
+- **The break is one way.** `WaveStage.lip_phase_at(d, travel)` is a function of d (lifted ahead, thrown at the peel point,
+  landed `WaveModel.lip_fall` behind it: the jet falls `sqrt(2h/g)` while the break peels on) plus surges that ride with
+  the water (`lip_travel`, meters peeled), so a stretch of crest only ever moves forward through it. The wall collapses
+  into whitewater only once its lip has landed (`collapse_at`, `whitewater_at`, `throw_at` all key off `lip_fall`), and the
+  tube under the thrown lip is clear water (`foam_at`, `LIP_FOAM_FROM`). While a wave is ridden its curl only deepens.
+- **Moves:** the lip hit pops him above the lip (`Rider.pop`) and whips the board on its tail (`Surfer3D` `WHIP_NOSE_UP`),
+  speed shed to `STALL_SPEED` and carried with the section; the cutback runs back at the curl, turns up into the foam
+  (`foam_climb`) and whips back fast (`REBOUND_OMEGA`). The board is lifted so no end or rail goes more than `BOARD_DIP`
+  under the face. The camera is fixed for now (`world.gd` `CAMERA_FIXED`; tuning it is in step 16).
+
 ## Tech
 
 - **Godot 4.7.2 stable**, GDScript only, **Compatibility renderer** (the only one that exports to web), **single-threaded web export** (no COOP/COEP headers needed on Firebase Hosting). Android export may come later, so avoid web-only hacks where a plain Godot feature exists.

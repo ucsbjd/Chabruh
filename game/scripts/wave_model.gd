@@ -37,7 +37,12 @@ const SHOULDER_SLACK := 0.85         # how much of the wave's push is gone once 
 const LIP_DRAW := 0.45               # how much harder the water draws up the top of the face where the lip is throwing
 const LOW_DRAW := 0.55               # the draw at the foot of the face, as a fraction of the draw in the middle
 const WHITEWATER_PUSH := 0.6         # the push left in the whitewater behind the break (the foam still shoves a board along)
-const COLLAPSE_LENGTH := 4.5         # distance behind the peel point over which the wall falls apart
+const COLLAPSE_LENGTH := 4.5         # distance over which the wall falls apart into foam once its lip has landed
+## The thrown lip is a jet: it keeps its forward speed while gravity pulls it down, so it lands about
+## peel speed * sqrt(2 h / g) behind the peel point (the break peels on while it falls). The tube lives that long.
+const FALL_GRAVITY := 9.8
+const FALL_MIN := 4.0
+const FALL_MAX := 9.0
 const WHITEWATER_HEIGHT := 0.16     # fraction of the wall left once it has collapsed into foam
 const PEAK_AT := 1.5                 # the highest point of the wave, just ahead of the peel point
 const PEAK_WIDTH := 6.0              # how far along the crest the peak spreads, in meters
@@ -48,9 +53,9 @@ const LIFT_RISE := 0.06              # the wall stands this much taller as the l
 const LIFT_CURL := 0.62              # ...with this much of the curl
 const LAND_DROP := 0.28              # the wall falls this much when the lip lands
 const LAND_CURL := 0.80              # ...with this much of the curl
+const LIP_FOAM_FROM := 0.86          # how far along the thrown lip (0 crest to 1 tip) its foamy edge starts
 const LANDING_RUN := 0.7             # meters the lip travels on toward the beach per meter of height it still has to fall
 const BUILD_LENGTH := 9.0            # distance ahead over which the lip builds up to its throw
-const LIP_LENGTH := 7.0              # how far behind the peel point the thrown lip lasts
 const POCKET_AHEAD := 3.8            # the pocket runs from here ahead of the peel point...
 const POCKET_BEHIND := -0.4          # ...to here, just behind it
 const BARREL_THRESHOLD := 0.35       # how much barrel there must be for the tube zone to exist
@@ -102,6 +107,9 @@ var reef_size := 0.0
 var reef_hollow := 0.0
 ## How much faster than usual the break peels right now (the reef section at the peel point, the dropping tide).
 var peel_mult := 1.0
+## Meters behind the peel point where the thrown lip lands (refresh_fall()); the mesh is built with it, so it changes only
+## when the wave is rebuilt.
+var lip_fall := 6.0
 ## The whole wave's height as a factor, live: 1 normally, near 0 in a lull when the sea goes glassy.
 var swell := 1.0:
 	set(value):
@@ -169,11 +177,16 @@ func taper_at(d: float) -> float:
 	return 1.0 - near - far
 
 
-## 1 at the peel point and ahead of it, falling to WHITEWATER_HEIGHT behind and then to nothing.
+## Works out where the lip lands for the wave's current size and peel speed. WaveStage calls it as it builds the mesh.
+func refresh_fall() -> void:
+	lip_fall = clampf(peel_speed() * sqrt(2.0 * height() / FALL_GRAVITY), FALL_MIN, FALL_MAX)
+
+
+## 1 at the peel point and over the tube, falling to WHITEWATER_HEIGHT once the lip has landed and then to nothing.
 func collapse_at(d: float) -> float:
 	if d >= 0.0:
 		return 1.0
-	var collapsed := lerpf(1.0, WHITEWATER_HEIGHT, smoothstep(0.0, 1.0, -d / COLLAPSE_LENGTH))
+	var collapsed := lerpf(1.0, WHITEWATER_HEIGHT, smoothstep(lip_fall * 0.7, lip_fall + COLLAPSE_LENGTH * 0.5, -d))
 	return collapsed * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
 
 
@@ -233,7 +246,7 @@ func calm_at(d: float) -> float:
 func whitewater_at(d: float) -> float:
 	if d >= 0.0:
 		return 0.0
-	return smoothstep(0.0, COLLAPSE_LENGTH, -d) * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
+	return smoothstep(lip_fall * 0.6, lip_fall + COLLAPSE_LENGTH * 0.4, -d) * (1.0 - smoothstep(PROFILE_BEHIND * 0.5, PROFILE_BEHIND, -d))
 
 
 ## A slow undulation along the crest, so the wall is never ruler-straight: swells in height of a few percent.
@@ -245,7 +258,7 @@ func roll_at(d: float) -> float:
 func throw_at(d: float) -> float:
 	if d >= 0.0:
 		return 1.0 - smoothstep(0.0, BUILD_LENGTH, d)
-	return 1.0 - smoothstep(LIP_LENGTH * 0.4, LIP_LENGTH, -d)
+	return 1.0 - smoothstep(lip_fall * 0.8, lip_fall + 2.0, -d)
 
 
 ## How curled the lip is at d, 0 to 1. Even a spilling wave keeps a little lip.
@@ -253,11 +266,11 @@ func curl_at(d: float) -> float:
 	return throw_at(d) * lerpf(0.18, 1.0, barrel())
 
 
-## How much of the face is foam, 0 to 1. Spilling waves start foaming ahead of the peel point;
-## plunging ones only behind it.
+## How much of the face is foam, 0 to 1. Spilling waves start foaming ahead of the peel point; plunging ones only where
+## the lip lands, so the tube under a thrown lip is clear water.
 func foam_at(d: float) -> float:
-	var lead := lerpf(4.0, 0.0, barrel())
-	return 1.0 - smoothstep(-4.0, lead, d)
+	var barrel_here := smoothstep(0.1, 0.45, barrel())  # (any wave that throws a real lip keeps its tube clear)
+	return 1.0 - smoothstep(lerpf(-4.0, -lip_fall - 2.0, barrel_here), lerpf(4.0, -lip_fall * 0.6, barrel_here), d)
 
 
 ## Angle of the face from horizontal, in radians: gentle at the base, steeper toward the crest,
@@ -273,7 +286,7 @@ func zone_at(d: float) -> Zone:
 		return Zone.SHOULDER
 	if d >= POCKET_BEHIND:
 		return Zone.POCKET
-	if barrel() > BARREL_THRESHOLD and d > -LIP_LENGTH:
+	if barrel() > BARREL_THRESHOLD and d > -lip_fall:
 		return Zone.BARREL
 	return Zone.WHITEWATER
 
@@ -370,7 +383,7 @@ func section_for(crest_meters: float, curl: float, foam_here: float, trough_over
 		var thin := pow(1.0 - t, 0.8)
 		var arc_radius := radius + tip_thick + (thick - tip_thick) * thin
 		var p := _arc_point(radius * aspect, centre_y, arc_radius, theta, aspect)
-		var tip_foam := smoothstep(0.55, 1.0, t) * curl
+		var tip_foam := smoothstep(LIP_FOAM_FROM, 1.0, t) * curl  # (only the lip's very edge: the curtain is clear water)
 		var index := result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), 0.0, 1.0 - thin * 0.8)
 		if p.y >= result.points[result.crest].y:
 			result.crest = index
@@ -381,7 +394,7 @@ func section_for(crest_meters: float, curl: float, foam_here: float, trough_over
 		var t := (i + 1) / float(POINTS_INNER)
 		var theta := lerpf(theta_tip, PI, t)
 		var p := _arc_point(radius * aspect, centre_y, radius, theta, aspect)
-		var tip_foam := (1.0 - smoothstep(0.0, 0.35, t)) * curl
+		var tip_foam := (1.0 - smoothstep(0.0, 1.0 - LIP_FOAM_FROM, t)) * curl
 		result.add(p, p.y / wave_h, maxf(foam_here, tip_foam), curl * lerpf(0.3, 1.0, t), 1.0 - t * 0.7)
 
 	# The face: concave, curling down to the trough (for a full barrel this is the tube's floor curve). Down the shoulder

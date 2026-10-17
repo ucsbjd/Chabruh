@@ -62,7 +62,7 @@ const DROP_SINK_RATE := 0.8         # face heights a second of drop at which he 
 const TUCK_CROUCH := 0.35            # how much deeper he crouches, tucked by the curl
 const U_LOW := 0.06
 const U_HIGH := 0.96
-const THETA_MIN := -2.9              # past straight down, round toward the curl: only reached in a cutback
+const THETA_MIN := -4.0              # round past facing the curl and up into its foam: only reached in a cutback
 const STICK_MIN := -1.45             # how far down the player's push can point him outside a cutback (almost straight down)
 const DROP_MAX := 1.25               # the steepest drop he aims for outside a cutback (radians): a snap leaves him facing down the
                                      # face, but not straight down it, where the curl would gain on him all the way to the bottom
@@ -118,6 +118,15 @@ const REBOUND_TIME := 0.15
 const REBOUND_OMEGA := 18.0
 const REBOUND_ACCEL := 200.0
 const CUT_BACK_MAX := 2.5            # seconds he may run back toward the curl before the whip comes anyway
+## Running back at the curl he sees the foam CUT_FOAM_SEE meters ahead of where it starts (CUT_FOAM) and turns on round
+## up into it, CUT_FOAM_CLIMB radians past facing back (nose up the face toward the curl); the foam (or reaching
+## CUT_FOAM_TOP up the face) whips him back round on the tail, high and vertical, like a small hit off the lip.
+const CUT_FOAM_SEE := 6.0
+const CUT_RUN_BACK := 0.3            # seconds he rides back at it standing tall (past CUT_FACING) before he turns up into the foam
+const CUT_FACING := -2.6
+const CUT_FOAM_INTO := 1.5           # meters into the foam the climb runs before it whips him back
+const CUT_FOAM_CLIMB := 0.95
+const CUT_FOAM_TOP := 0.72
 ## Pumping (the 300 fps footage): running behind where he is steered, he pumps for speed down the line, little turns
 ## up and down the face with the knees, one every PUMP_PERIOD seconds, PUMP_SWING radians each way, more the further
 ## behind he is (from PUMP_SLACK to PUMP_RANGE meters behind), folding PUMP_CROUCH as the nose goes down.
@@ -133,7 +142,7 @@ const PUMP_CROUCH := 0.18
 const LIP_SIT := 0.45
 const FLOAT_TUCK := 0.25
 const CUT_CROUCH := 0.5
-const CUT_TALL := 0.3
+const CUT_TALL := 0.45
 const REBOUND_FOLD := 0.45
 const REBOUND_PITCH := 0.25
 const AFTER_REBOUND_TIME := 0.45
@@ -187,6 +196,12 @@ const FLOAT_SINK := 2.0
 const FLOAT_CARRY := 1.0
 const CARRY_FADE := 0.5
 const THETA_MAX := 1.5               # almost straight up it
+## Hitting the lip vertically he does not stop at the crest: the board's tail rides up the throwing lip and he pops a
+## little above it (POP_SHARE of his speed up the face at the top, once his heading is past POP_FROM), the board pivots
+## round on its tail up there with almost no speed left, and gravity brings him back onto the face.
+const POP_FROM := 1.1
+const POP_SHARE := 0.4
+const POP_MAX := 0.9                 # meters
 const COMPRESSION_K := 100.0         # hips: slightly underdamped, about 120 ms (natural frequency 10 rad/s)
 const COMPRESSION_D := 17.0
 const LEAD_MAX := 0.8
@@ -296,6 +311,9 @@ var burst_release := 0.0             # 0 to 1: how much the last burst came from
 var charge := 0.0                    # 0 to 1: the bottom turn's press, stored to explode up the face
 var release := 0.0                   # 0 to 1: stopping at the top, his speed going into the spray
 var afloat := 0.0                    # 0 to 1: floating down with the wave after a release
+var pop := 0.0                       # meters above the face at the lip, popped up off it in a vertical hit
+var _pop_v := 0.0                    # ...and how fast he is still rising (meters a second)
+var _popped := false                 # one pop per climb
 var spray_dir := Vector3(0.6, 0.6, 0.0)  # world direction the spray leaves the tail
 var flow := FLOW_START               # 0 to 1: how well the ride is flowing (see FLOW_START)
 ## The centre of mass. `lean` is across the board from the face's normal (positive toward the wave, the toe side, which
@@ -347,6 +365,8 @@ var _push_along := 0.0               # m/s squared of drive (positive) or drag (
 var _pivot := 0.0                    # rad/s the board swings round on its tail while it is light, smoothed
 var _pump_phase := 0.0
 var _cut_back_time := 0.0            # seconds running back toward the curl in a cutback
+var foam_climb := false              # running back in a cutback, turning up into the foam before the whip
+var _facing_back_time := 0.0
 var _rebounding := false             # round in a cutback: the water is pivoting the board back
 var _load_rhythm := 0.0              # the crouch that the rhythm of the load asks for, see _update_crouch
 var _turning_g := 0.0                # the sideways pull of the carve, in g
@@ -412,6 +432,11 @@ func place(meters_ahead: float, face_height: float) -> void:
 	tuck = 0.0
 	_against = 0.0
 	_lip_hold = 0.0
+	pop = 0.0
+	_pop_v = 0.0
+	_popped = false
+	foam_climb = false
+	_facing_back_time = 0.0
 	_last_burst = 0.0
 	aim = 0.0
 	charge = 0.0
@@ -493,7 +518,7 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	_stick = clampf(_stick * fade + height_push * tuning.stick_gain, stick_min, STICK_FULL)
 	# (holding a cutback swings him all the way round: how long it is held, not how hard, says how far)
 	if cutting_back and not _rebounding:
-		_stick = -CUTBACK_REACH
+		_stick = -CUTBACK_REACH - (CUT_FOAM_CLIMB if foam_climb else 0.0)
 	if _rebounding:
 		_stick = lerpf(_stick, 0.0, 1.0 - exp(-delta / REBOUND_TIME))
 	var want_d := d_for(steer)
@@ -578,7 +603,7 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	# little skid off the tail, throwing the fan; rebounding off the foam it pivots. Turning off the top, while his speed
 	# goes into the spray (release), only the tail and rail are biting and the board swings round at the top.
 	var coming_round := (1.0 if _rebounding else CUT_PIVOT) if cutting_back else 0.0
-	var light := 1.0 if snapping else maxf(maxf(clampf((1.0 - load_g) / 0.5, 0.0, 1.0), steep), maxf(maxf(at_lip, coming_round), release))
+	var light := 1.0 if snapping or pop > 0.0 else maxf(maxf(clampf((1.0 - load_g) / 0.5, 0.0, 1.0), steep), maxf(maxf(at_lip, coming_round), release))
 	pivoting = light
 	# Deep in a compressed bottom turn the rail is buried and holds a tighter turn: that is what sends him vertical.
 	var buried := smoothstep(0.5, 0.9, compression) * clampf((0.6 - u) / 0.3, 0.0, 1.0)
@@ -695,11 +720,14 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	# (the top holds him while the board comes round, then he lets go and floats down)
 	if rise < 0.0:
 		rise *= (1.0 - _lip_hold) * (1.0 - RELEASE_HOLD * release)
+	if pop > 0.0:
+		rise = maxf(rise, 0.0)  # (up above the lip he comes back down onto the face only when the pop is over)
 	var new_u := clampf(u + rise * delta, U_LOW, U_HIGH)
 	vel_d = (new_d - d) / delta
 	vel_u = (new_u - u) / delta
 	d = new_d
 	u = new_u
+	_update_pop(delta, sin_phi, g)
 
 	# Balance: what he stands against is the board's acceleration minus gravity. Along the board that is the water's drag
 	# and his own pumping (gravity along the slope, and the wave's drive that stands in for it, move his body and the
@@ -887,24 +915,50 @@ func _update_cutback(push: float, delta: float) -> void:
 			cutting_back = true
 			_rebounding = false
 			_cut_armed = false
+			foam_climb = false
+			_facing_back_time = 0.0
 		return
 	if not _rebounding:
 		# (he sees the foam coming: the rebound starts early enough to finish before he gets there)
 		var foam_close := d + minf(vel_d, 0.0) * REBOUND_TIME * 2.0 < CUT_FOAM
-		# (round past CUT_PAST he runs on back toward the curl, held or not, until the foam or the bottom whips him back)
+		# (round past CUT_PAST he runs on back toward the curl, held or not, turns up into the foam as it comes, and the
+		# foam, the top of that climb or the bottom whips him back)
 		_cut_back_time = _cut_back_time + delta if theta < CUT_PAST else 0.0
-		if theta < CUT_PAST and (foam_close or u < 0.12 or _cut_back_time > CUT_BACK_MAX):
-			# (the water knocks the board straight back toward the line: no slow fade of the push)
+		_facing_back_time = _facing_back_time + delta if theta < CUT_FACING else 0.0
+		foam_climb = foam_climb or (_facing_back_time > CUT_RUN_BACK and d < CUT_FOAM + CUT_FOAM_SEE)
+		var climbed := foam_climb and u > CUT_FOAM_TOP and theta < -PI
+		# (turning up into the foam he goes on until he is in it, rather than pivoting early as it comes)
+		var in_foam := d < CUT_FOAM - CUT_FOAM_INTO if foam_climb or theta < CUT_FACING else foam_close
+		if theta < CUT_PAST and (in_foam or climbed or u < 0.12 or _cut_back_time > CUT_BACK_MAX):
+			foam_climb = false
+			# (the water knocks the board straight back toward the line: no slow fade of the push; and the foam that hit
+			# him carries him on with the curl while he gets his speed back, as after a hit off the lip)
 			_rebounding = true
+			_carry = 1.0
 			_stick = 0.0
 			_stick_smooth = 0.0
-		elif not holding:
+		elif not holding and theta >= CUT_PAST:
 			cutting_back = false
 			return
 	if _rebounding and theta > CUT_DONE:
 		cutting_back = false
 		_rebounding = false
 		_after_rebound = 1.0
+
+
+## A vertical climb into the lip carries him a little above it (pop), then gravity brings him back onto the face.
+func _update_pop(delta: float, sin_phi: float, g: float) -> void:
+	if u < LIP_FROM:
+		_popped = false
+	if not _popped and not cutting_back and u > U_HIGH - 0.03 and theta > POP_FROM:
+		_popped = true
+		_pop_v = minf(v * sin(theta) * sin_phi * POP_SHARE, sqrt(2.0 * g * POP_MAX))
+	if pop > 0.0 or _pop_v > 0.0:
+		pop += _pop_v * delta
+		_pop_v -= g * delta
+		if pop <= 0.0:
+			pop = 0.0
+			_pop_v = 0.0
 
 
 ## The strength of a spray that should be thrown now, 0 to 1, or 0 for none. Asking clears it, and sets `burst_release`

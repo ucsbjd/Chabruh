@@ -14,6 +14,7 @@ const PADDLE_TIME := 5.0             # seconds paddling out at the start
 const LULL_TIMES := Vector2(9.0, 15.0)    # seconds sitting in the lineup between sets (random in this range)
 const APPROACH_TIME := 7.0           # seconds from the set's lines showing on the horizon to him riding
 const RISE_TIME := 2.5               # ...the last of which the swell stands up under him
+const CATCH_TIME := 3.0              # ...and he lies down and paddles to catch it for the last this many seconds
 const RIDE_TIMES := Vector2(28.0, 40.0)   # seconds a wave lives before it closes out
 const SET_SIZE := 0.1                # each set's size and hollowness wander this much either side of the tide's
 const SET_HOLLOW := 0.14
@@ -22,6 +23,10 @@ const DRIFT_TIME := 3.0              # seconds drifting back out after a closeou
 const LULL_SWELL := 0.15             # the wave's height in the lull, as a factor
 const FALL_SWELL := 0.7              # ...and as it rolls away from a wipeout
 const SWELL_EASE := 1.2              # seconds for the swell to ease toward the lull's
+const APPROACH_FAR := 140.0          # meters offshore the set's wave is when its lines first show
+const APPROACH_SWELL := 0.4          # ...and how big it is out there (it grows as it comes in over the reef)
+const PASS_SPEED := 9.0              # meters a second the spent wave rolls on toward the beach after the ride
+const CLOSEOUT_TIME := 1.6           # seconds for a closing-out wall to turn to whitewater all down the line
 const KICKOUT_D := 32.0              # meters out on the shoulder past which he kicks out...
 const KICKOUT_TIME := 1.2            # ...after this long there
 const CAUGHT_D := -2.0               # meters behind the peel point where the foam can take him...
@@ -42,6 +47,7 @@ var _swell_from := 1.0
 var _lull_time := LULL_TIMES.x
 var _ride_time := RIDE_TIMES.y
 var _rng := RandomNumberGenerator.new()
+var _closing := false                # the ride ended with the wave closing out (not a kick out or a tumble)
 
 
 ## Starts in the water paddling out (`intro`), or straight up riding (tests and captures).
@@ -76,6 +82,7 @@ func update(delta: float, rider: Rider, model: WaveModel, lip_landing: bool) -> 
 				return "kickout"
 			if timer > _ride_time:
 				_enter(State.DRIFT)
+				_closing = true
 				return "closeout"
 		State.WIPEOUT:
 			swell = lerpf(swell, FALL_SWELL, 1.0 - exp(-delta / SWELL_EASE))
@@ -93,14 +100,22 @@ func update(delta: float, rider: Rider, model: WaveModel, lip_landing: bool) -> 
 				next_set()
 				return "set"
 		State.SET:
-			var rise := smoothstep(APPROACH_TIME - RISE_TIME, APPROACH_TIME, timer)
-			swell = lerpf(_swell_from, 1.0, rise)
+			# (the wave grows as it comes in over the reef, and stands up fully under him at the end)
+			var grow := smoothstep(0.0, APPROACH_TIME, timer)
+			swell = lerpf(minf(_swell_from, APPROACH_SWELL), APPROACH_SWELL, smoothstep(0.0, 0.2, grow))
+			swell = lerpf(swell, 1.0, smoothstep(APPROACH_TIME - RISE_TIME * 1.6, APPROACH_TIME, timer))
 			if timer >= APPROACH_TIME:
 				swell = 1.0
 				_ride_time = _rng.randf_range(RIDE_TIMES.x, RIDE_TIMES.y)
 				_enter(State.RIDING)
 				return "ride"
 	return ""
+
+
+## The wave closes out now (testing: the end of its life without waiting for it).
+func close_out() -> void:
+	_enter(State.DRIFT)
+	_closing = true
 
 
 ## The soft tumble, now.
@@ -127,6 +142,37 @@ func approach() -> float:
 	return clampf(timer / APPROACH_TIME, 0.0, 1.0) if state == State.SET else 0.0
 
 
+## Where the wave is, in meters toward the beach from where it breaks on the reef: far offshore while he waits, coming in
+## with the set, here while it is ridden, and rolling on past him toward the beach once the ride is over.
+func wave_shift() -> float:
+	match state:
+		State.SET:
+			return -APPROACH_FAR * (1.0 - approach())
+		State.RIDING:
+			return 0.0
+		State.DRIFT, State.WIPEOUT:
+			return PASS_SPEED * timer
+	return -APPROACH_FAR
+
+
+## How far the wall has closed out (turned to whitewater all along), 0 to 1, after a ride that ended in a closeout.
+func closeout() -> float:
+	return smoothstep(0.0, CLOSEOUT_TIME, timer) if state == State.DRIFT and _closing else 0.0
+
+
+## How much he is lying on the board paddling, 0 to 1: paddling out at the start, back out to the lineup after a ride,
+## and paddling hard to catch the set's wave as it reaches him (then he pops up).
+func paddle() -> float:
+	match state:
+		State.PADDLE:
+			return 1.0
+		State.DRIFT:
+			return smoothstep(0.6, 1.3, timer)
+		State.SET:
+			return smoothstep(APPROACH_TIME - CATCH_TIME, APPROACH_TIME - CATCH_TIME + 0.6, timer) * (1.0 - smoothstep(APPROACH_TIME - 0.5, APPROACH_TIME - 0.1, timer))
+	return 0.0
+
+
 ## How far through the tumble he is, 0 to 1 (0 when not wiping out).
 func tumble() -> float:
 	return clampf(timer / WIPEOUT_TIME, 0.0, 1.0) if state == State.WIPEOUT else 0.0
@@ -149,6 +195,7 @@ func sunk() -> float:
 
 func _enter(next: State) -> void:
 	state = next
+	_closing = false
 	timer = 0.0
 	_caught = 0.0
 	_out = 0.0

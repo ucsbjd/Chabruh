@@ -73,7 +73,7 @@ extends Resource
 ## turn: how much of the turn he asks for comes from the pivot, and not the lean, when it is fully light.
 @export var pivot_share: float = 0.9
 ## The fastest the board swings round on its tail at the lip, rad/s (under half a second from straight up to straight down).
-@export var snap_omega: float = 6.5
+@export var snap_omega: float = 9.5
 ## How hard a stall (steering back behind where he is) holds him back, per second of speed.
 @export var stall_drag: float = 0.6
 ## How much of the turning lean rolls the board onto its rail, how much it sits on its uphill rail to hold the line, the

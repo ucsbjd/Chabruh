@@ -31,6 +31,7 @@ uniform vec4 reef_b = vec4(1000.0, 0.001, 0.0, 0.0);
 uniform float swell = 1.0;
 // A set rolling in from the horizon, 0 (none) to 1 (here): a few long lines of swell come toward the lineup.
 uniform float set_approach = 0.0;
+uniform float wave_shift = 0.0;      // meters the wave is drawn toward the beach from where it breaks (WaveStage.place_wave)
 
 float reef_weight(vec4 r, float d) {
 	return 1.0 - smoothstep(0.0, 1.0, abs(d - r.x) / r.y);
@@ -83,7 +84,7 @@ void fragment() {
 
 	// The set: three long dark lines with a pale top edge, travelling in from the horizon (offshore is -z) as it comes.
 	if (set_approach > 0.0) {
-		float front = mix(-420.0, -8.0, set_approach);
+		float front = mix(-420.0, -40.0, set_approach);   // (the set's next waves, behind the one coming in)
 		float wobble = (texture(noise_warp, vec2(wpos.x * 0.004, 0.3)).r - 0.5) * 18.0;
 		float behind = front - (wpos.z + wobble);          // meters the point lies offshore of the first line
 		float lines = 0.0;
@@ -99,10 +100,10 @@ void fragment() {
 	// Shadow and foam around the base of the wave, where the profile says it is.
 	float d = clamp((-wpos.x - profile_d0) / (profile_d1 - profile_d0), 0.0, 1.0);
 	vec4 pr = texture(profile, vec2(d, 0.5));
-	float from_trough = wpos.z - pr.g;                      // beach side of the wave's base is positive
+	float from_trough = wpos.z - wave_shift - pr.g;                      // beach side of the wave's base is positive
 	float calm_sea = smoothstep(0.1, 0.6, swell);           // in a lull there is no wave to shade or foam the water
 	float near_wave = (1.0 - smoothstep(0.0, 4.0 + pr.r, abs(from_trough))) * calm_sea;
-	col = mix(col, wave_shadow.rgb, near_wave * 0.35);
+	col = mix(col, wave_shadow.rgb, near_wave * 0.18);
 
 	// A shallow reef bowl shows through the water in front of the wave before the wave reaches it: soft dark violet
 	// patches with warm coral in them.

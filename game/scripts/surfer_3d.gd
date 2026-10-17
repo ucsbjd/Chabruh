@@ -128,7 +128,7 @@ const LEGS := [["upperleg02.L", "lowerleg01.L", "foot.L", -1.0], ["upperleg02.R"
 ## the board in the lull (feet in the water, hands on the rails) and curled up in the tumble (arms round the head).
 ## While one shows, the balance tilt, the hip pivot, the fold, the lead chain and the head aim give way to it, and it
 ## eases in and out over FREE_BLEND_TIME (seconds), slower than the riding poses.
-const FREE_POSES := ["sit", "tumble"]
+const FREE_POSES := ["sit", "tumble", "paddle_a", "paddle_b"]
 const FREE_BLEND_TIME := 0.35
 ## The riding poses of step 12: how much of the snap pose shows while the board pivots at the lip, and of the air pose
 ## (knees drawn up under him) as he floats down after the release.
@@ -176,6 +176,8 @@ var _down_sit := 0.0    # what set_down() asked for
 ## every pose); "" lets the ride pick the poses.
 var held_pose := ""
 var _down_curl := 0.0
+var _down_paddle := 0.0  # lying on the board paddling, 0 to 1...
+var _stroke := 0.0       # ...and where in the stroke he is (radians: one arm forward, then the other)
 var _pose_hand := {}    # free pose -> side -> [wrist, elbow] under that pose, in the model's space
 var _pose_leg := {}     # free pose -> side -> [ankle, knee, foot basis in skeleton space] under that pose
 
@@ -227,20 +229,27 @@ func pose_names() -> Array:
 	return _poses.keys()
 
 
-## Down in the water (world.gd, from RideCycle): sitting astride the board through the lull, curled up in the tumble.
-## The riding poses give way to them from the next follow(). Call it every frame (with zeros while riding).
-func set_down(sit: float, curl: float) -> void:
+## Down in the water (world.gd, from RideCycle): sitting astride the board through the lull, curled up in the tumble,
+## lying on it paddling out (`stroke` is the stroke's phase, in radians). The riding poses give way to them from the next
+## follow(). Call it every frame (with zeros while riding).
+func set_down(sit: float, curl: float, paddle := 0.0, stroke := 0.0) -> void:
 	_down_sit = clampf(sit, 0.0, 1.0)
 	_down_curl = clampf(curl, 0.0, 1.0)
+	_down_paddle = clampf(paddle, 0.0, 1.0)
+	_stroke = stroke
 
 
 func _apply_down() -> void:
-	var riding := 1.0 - maxf(_down_sit, _down_curl)
+	var riding := 1.0 - maxf(maxf(_down_sit, _down_curl), _down_paddle)
 	for pose_name: String in _targets:
 		if not pose_name in FREE_POSES:
 			_targets[pose_name] *= riding
 	set_target("sit", _down_sit)
 	set_target("tumble", _down_curl)
+	# (the stroke swings between its two baked phases: one arm reaching forward into the water, the other pushing back)
+	var reach := 0.5 + 0.5 * sin(_stroke)
+	set_target("paddle_a", _down_paddle * reach)
+	set_target("paddle_b", _down_paddle * (1.0 - reach))
 	if held_pose != "":
 		for pose_name: String in _targets:
 			_targets[pose_name] = 1.0 if pose_name == held_pose else 0.0
@@ -295,9 +304,9 @@ func follow(rider: Rider, model: WaveModel, delta: float) -> void:
 	var floater := smoothstep(0.86, 0.94, rider.u) * (1.0 - clampf(absf(rider.theta) / 0.5, 0.0, 1.0)) * (1.0 - clampf(absf(rider.omega) / 1.5, 0.0, 1.0))
 	# A whip (the snap at the lip, the cutback's rebound) stands the board up on its tail: nose high, his weight over the
 	# back foot, pivoting against it.
-	var whip := 1.0 if rider.snapping or rider.rebounding else 0.0
+	var whip := 1.0 if rider.snapping or rider.rebounding or rider.pop > 0.0 else 0.0
 	_whip = lerpf(_whip, whip, 1.0 - exp(-delta / WHIP_TIME))
-	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll, maxf(rider.stall * NOSE_LIFT, _whip * WHIP_NOSE_UP), floater)
+	_place(model, rider.d, rider.u, rider.theta, rider.rail_roll, maxf(rider.stall * NOSE_LIFT, _whip * WHIP_NOSE_UP), floater, rider.pop)
 	_balance = (transform.basis.inverse() * rider.balance).normalized()
 	# Turn poses come from the lean that turns him: toward the wave low on the face (bottom turn), toward the beach
 	# high on it (top turn). The bottom turn's deep hip hinge also shows when he is deeply compressed low on the face,
@@ -419,7 +428,7 @@ func _follow_moves(rider: Rider, delta: float) -> void:
 ## The board: on the face, its nose along the heading, rolled about its own length onto a rail (positive puts the
 ## toe-side rail, the one nearest the wave, down, so the deck faces into a bottom turn).
 ## `nose_up` lifts the nose (radians) about the tail, as in a stall.
-func _place(model: WaveModel, d: float, u: float, theta: float, roll: float, nose_up := 0.0, lift := 0.0) -> void:
+func _place(model: WaveModel, d: float, u: float, theta: float, roll: float, nose_up := 0.0, lift := 0.0, pop := 0.0) -> void:
 	var normal := model.surface_normal(d, u).normalized().slerp(Vector3.UP, lift * FLOAT_LEVEL)
 	var t_crest := Vector3(-1.0, 0.0, 0.0)  # down the line
 	var t_face := t_crest.cross(normal).normalized()  # up the face, toward the lip (and into the wave)
@@ -432,7 +441,7 @@ func _place(model: WaveModel, d: float, u: float, theta: float, roll: float, nos
 	var basis := Basis(along, normal, along.cross(normal)) * Basis(Vector3.RIGHT, -roll) * Basis(Vector3.BACK, -nose_up)
 	# The board turns about the back foot, like a pivot turn: the tail stays on the spot being ridden and the nose
 	# swings round to point where he is going, so the board centre sits ahead of the pivot along the board.
-	var pivot := model.surface_point(d, u).lerp(model.crest_point(d), lift * FLOAT_LIFT)
+	var pivot := model.surface_point(d, u).lerp(model.crest_point(d), lift * FLOAT_LIFT) + Vector3.UP * pop
 	transform = Transform3D(basis, pivot - basis.x * PIVOT_TO_CENTRE)
 	# Fibreglass floats: a straight board on a concave face, rolled onto its rail or pitched, would cut into the water
 	# at its ends, so lift it along the face's normal until no end or rail is more than BOARD_DIP under.

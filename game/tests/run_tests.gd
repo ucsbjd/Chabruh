@@ -243,13 +243,13 @@ func _test_wave_motion() -> void:
 	_check(wave.mist_at(-1.0) > wave.mist_at(25.0) and wave.mist_at(25.0) > 0.0, "spray is thickest at the break, with a little spindrift all along the crest")
 	var stage := WaveStage.new()
 	var phase := stage.lip_phase_at(2.0, 3.0)
-	_check(phase >= 0.0 and phase < 1.0 and is_equal_approx(stage.lip_phase_at(2.0, 3.0 + WaveStage.LIP_PERIOD), phase), "the lip's breath repeats every period")
+	_check(phase >= 0.0 and phase < 1.0 and is_equal_approx(stage.lip_phase_at(2.0, 3.0 + WaveStage.LIP_SPACING), phase), "the lip's surges repeat every LIP_SPACING the break peels")
 	# One way: following a stretch of crest as the peel passes it (d falls at the slowest peel speed), its phase never goes back.
 	var one_way := true
 	var last := -1.0
 	for i in 400:
 		var t := i * 0.05
-		var now := stage.lip_phase_at(8.0 - 4.0 * t, t)
+		var now := stage.lip_phase_at(8.0 - 4.0 * t, 4.0 * t)
 		one_way = one_way and now >= last - 0.0001
 		last = now
 	_check(one_way and last > 0.99, "a stretch of crest is lifted, thrown, lands and stays down; it never curls back up")
@@ -326,12 +326,12 @@ func _test_carve_trail() -> void:
 	var still := wave.surface_point(13.0, 0.55) + wave.surface_normal(13.0, 0.55) * WaveCarveTrail.LIFT_OFF
 	_check(trail.face_point(13.0, 0.55, time).distance_to(still) < 0.001, "the trail sits just off the face where it is still")
 	# ...and moving with the lip's breath in the pocket.
-	var lifted_time := WaveStage.LIP_PERIOD * (0.25 - 1.0 / WaveStage.LIP_SPACING)
+	var lifted_time := WaveStage.LIP_SPACING * 0.25 - 1.0
 	var thrown := wave.section_key(1.0, WaveModel.LipShape.THROWN)
 	var lifted := wave.section_key(1.0, WaveModel.LipShape.LIFTED)
 	var morphed := thrown.face_point(0.55).lerp(lifted.face_point(0.55), wave.throw_at(1.0) * WaveStage.lip_morph(WaveStage.lip_phase_at(1.0, lifted_time)).x) + thrown.face_normal(0.55) * WaveCarveTrail.LIFT_OFF
 	var on_face := trail.face_point(1.0, 0.55, lifted_time)
-	_check(on_face.distance_to(Vector3(-1.0, morphed.y, morphed.x)) < 0.001 and on_face.distance_to(trail.face_point(1.0, 0.55, lifted_time + WaveStage.LIP_PERIOD * 0.4)) > 0.02, "in the pocket the trail rises and falls with the face through the lip's cycle")
+	_check(on_face.distance_to(Vector3(-1.0, morphed.y, morphed.x)) < 0.001 and on_face.distance_to(trail.face_point(1.0, 0.55, lifted_time + WaveStage.LIP_SPACING * 0.4)) > 0.02, "in the pocket the trail rises and falls with the face through the lip's cycle")
 
 	# Riding in the pocket, the old foam drifts back into the whitewater behind the break and is gone there.
 	trail.clear()
@@ -747,7 +747,7 @@ func _ride_cutback(wave: WaveModel, tuning: TuningData, at: float, hold: float, 
 	var steer := Rider.steer_for(at)
 	var phase := "drop"
 	var result := {"start_u": -1.0, "cut_u": -1.0, "snapped": false, "release": 0.0, "peak_u": 0.0, "carve_time": -1.0, "pivot": 0.0,
-		"rail_frames": 0, "rail_max": 0.0, "frames": 0, "rebound_time": -1.0, "rebounded": false, "lowest_heading": 0.0,
+		"rail_frames": 0, "rail_max": 0.0, "frames": 0, "rebound_time": -1.0, "whip_at": -1.0, "rebounded": false, "lowest_heading": 0.0,
 		"held_back": -10.0, "held_frames": 0, "closest": 99.0, "cut": false, "ended": false}
 	var carve_from := 0.0
 	var round_at := -1.0
@@ -795,8 +795,10 @@ func _ride_cutback(wave: WaveModel, tuning: TuningData, at: float, hold: float, 
 				result.held_back = maxf(result.held_back, rider.theta)
 				result.held_frames += 1
 		if phase == "let_go":
-			if result.rebound_time < 0.0 and rider.theta > -0.6:
-				result.rebound_time = t - let_go_at
+			if result.whip_at < 0.0 and rider.rebounding:
+				result.whip_at = t
+			if result.rebound_time < 0.0 and result.whip_at >= 0.0 and rider.theta > -0.6:
+				result.rebound_time = t - result.whip_at
 			result.ended = not rider.cutting_back
 			if t - let_go_at > 1.5:
 				break
@@ -815,7 +817,7 @@ func _test_cutback(wave: WaveModel, tuning: TuningData) -> void:
 	_check(full.carve_time > 0.8 and full.carve_time < 1.7 and full.pivot < 0.5 and full.peak_u < 0.95, "held, it carves round on the rail until he faces back toward the curl, in about the footage's time (%.2f s, pivot %.2f, up to %.2f)" % [full.carve_time, full.pivot, full.peak_u])
 	_check(full.held_frames >= 12 and full.held_back < -2.4, "held on, he keeps facing back toward the curl (%.2f s, %d degrees at most)" % [full.held_frames / 60.0, rad_to_deg(full.held_back)])
 	_check(full.rail_max > 0.3 and full.rail_share > 0.6, "the rail throws a curtain of spray the whole way round (%.2f, %d%% of the carve)" % [full.rail_max, roundi(full.rail_share * 100.0)])
-	_check(full.rebounded and full.rebound_time > 0.0 and full.rebound_time < 0.55 and full.ended, "let go, the board pivots back toward the line quickly (%.2f s)" % full.rebound_time)
+	_check(full.rebounded and full.rebound_time > 0.0 and full.rebound_time < 0.55 and full.ended, "let go, he runs on back into the foam and it whips the board back toward the line quickly (%.2f s)" % full.rebound_time)
 	_check(full.closest > -1.0, "a cutback takes him back to the pocket, not past the curl (closest %.1f m ahead of the peel point)" % full.closest)
 	var early := _ride_cutback(wave, tuning, 10.0, 0.25, 0.0)
 	_check(not early.rebounded and early.lowest_heading > -2.0 and early.ended, "let go before straight down, it is just a long carve down the face (%d degrees at most)" % rad_to_deg(early.lowest_heading))
@@ -1128,7 +1130,7 @@ func _test_flow_and_cycle() -> void:
 
 	var cycle := RideCycle.new()
 	var rider := Rider.new()
-	rider.place(-2.8, 0.3)
+	rider.place(-model.lip_fall - 2.0, 0.3)  # (in the foam, behind where the lip lands)
 	model.hollowness = 0.2
 	var event := ""
 	for i in 120:
@@ -1397,7 +1399,7 @@ func _test_gold_moves() -> void:
 				seen.rail_up = seen.rail_up or back_hand.y > head.y
 			if rider.cutting_back and not rider.rebounding and theta < -50.0 and theta > -110.0:
 				seen.sweep = seen.sweep or (absf(back_hand.y - head.y) < 0.35 and back_hand.x < back_shoulder.x - 0.25)
-			if rider.cutting_back and not rider.rebounding and theta < -150.0:
+			if rider.cutting_back and not rider.rebounding and not rider.foam_climb and theta < -150.0:  # (before he turns up into the foam)
 				var front_shoulder := _joint(surfer, "upperarm01.L")
 				seen.point_back = seen.point_back or (front_hand.x > front_shoulder.x + 0.3 and absf(front_hand.y - front_shoulder.y) < 0.3)
 				seen.tall = maxf(seen.tall, head.y - feet.y)

@@ -83,11 +83,11 @@ func _init() -> void:
 
 
 ## Call every frame: follows the break on screen and fires the spit as each lip lands.
-func update(stage: WaveStage, at_time: float) -> void:
+func update(stage: WaveStage) -> void:
 	var model := stage.model
 	for i in SPIT_POINTS.size():
 		var d := -SPIT_POINTS[i] * WaveStage.lip_fall_length
-		var phase := stage.lip_phase_at(d, at_time)
+		var phase := WaveStage.lip_phase_at(d, WaveStage.lip_travel)
 		var crossed := _last_phase[i] >= 0.0 and _last_phase[i] < WaveStage.LIP_LANDING_PHASE and phase >= WaveStage.LIP_LANDING_PHASE
 		_last_phase[i] = phase
 		var landing := model.lip_landing_point(d)

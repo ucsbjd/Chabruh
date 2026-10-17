@@ -87,8 +87,8 @@ func clear() -> void:
 
 ## One frame of riding: the wave carries the points, the board's tail leaves a new one every RECORD_EVERY seconds, and the
 ## strip is rebuilt. (d, u) is the spot being ridden (the back foot), `heading` the rider's heading (0 down the line,
-## positive up the face), `power` how hard the rail is biting (speed times sharpness, 0 to 1), `at_time` the shaders' time.
-func carve(delta: float, d: float, u: float, heading: float, power: float, at_time: float) -> void:
+## positive up the face), `power` how hard the rail is biting (speed times sharpness, 0 to 1), `travel` how far the break has peeled (WaveStage.lip_travel).
+func carve(delta: float, d: float, u: float, heading: float, power: float, travel: float) -> void:
 	if _model == null or delta <= 0.0:
 		return
 	_advect(delta)
@@ -109,7 +109,7 @@ func carve(delta: float, d: float, u: float, heading: float, power: float, at_ti
 		_strength[_newest] = strength
 		_age[_newest] = 0.0
 		_along[_newest] = _travelled
-	_build(tail_d, tail_u, width, strength, at_time)
+	_build(tail_d, tail_u, width, strength, travel)
 
 
 ## How many points the trail has now (not counting the one at the board).
@@ -128,9 +128,9 @@ func point_strength(i: int) -> float:
 	return _strength[_index(i)]
 
 
-## Where on the face (d, u) is, as the shaders draw it at `at_time`, LIFT_OFF meters off the water: a world position.
-func face_point(d: float, u: float, at_time: float) -> Vector3:
-	var morph := WaveStage.lip_morph(WaveStage.lip_phase_at(d, at_time))
+## Where on the face (d, u) is, as the shaders draw it once the break has peeled `travel` meters, LIFT_OFF meters off the water: a world position.
+func face_point(d: float, u: float, travel: float) -> Vector3:
+	var morph := WaveStage.lip_morph(WaveStage.lip_phase_at(d, travel))
 	return _point(d, u, morph.x, morph.y)
 
 
@@ -159,7 +159,7 @@ func _water_distance(d0: float, u0: float, d1: float, u1: float) -> float:
 
 ## Fills the strip: the board's tail first, then the points from newest to oldest, each one a pair of vertices either side
 ## of the track, on the face.
-func _build(tail_d: float, tail_u: float, tail_width: float, tail_strength: float, at_time: float) -> void:
+func _build(tail_d: float, tail_u: float, tail_width: float, tail_strength: float, travel: float) -> void:
 	var n := _count + 1
 	_mesh.clear_surfaces()
 	if n < 2:
@@ -184,7 +184,7 @@ func _build(tail_d: float, tail_u: float, tail_width: float, tail_strength: floa
 		if run.length_squared() > 1e-6:
 			side = Vector2(-run.y, run.x).normalized()
 		var half := side * (width * 0.5)
-		var morph := WaveStage.lip_morph(WaveStage.lip_phase_at(d, at_time))
+		var morph := WaveStage.lip_morph(WaveStage.lip_phase_at(d, travel))
 		var fade := strength * (1.0 - _model.whitewater_at(d)) * (1.0 - smoothstep(FADE_TOP, 1.0, u))
 		var colour := Color(u, age / LIFETIME, 0.0, fade)
 		for edge in 2:

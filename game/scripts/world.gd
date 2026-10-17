@@ -110,6 +110,8 @@ const CAMERA_STEP := 10.0
 const FLOAT_BOB := 0.07
 const FLOAT_ROCK := 0.05
 const FLOAT_RATES := Vector2(0.23, 0.17)
+## Paddling: strokes a second, calmly paddling out and hard to catch a wave.
+const STROKE_RATES := Vector2(0.55, 1.1)
 const CAMERA_OFFSET_MAX := 90.0
 
 ## The green room. In the tube (more than TUBE_IN of it, between TUBE_D meters of the peel point and below TUBE_U up the
@@ -176,6 +178,7 @@ var _tuck := 0.0                    # 0 open, 1 tucked in for the tube
 var _look := 0.0                    # degrees the camera has swung round to look down the line
 ## Testing the camera (step 12): degrees added to the camera's swing by the overlay's camera keys, to find the angle.
 var camera_offset := 0.0
+var _stroke := 0.0                   # the paddling stroke's phase, radians
 var _shoulder_x := 0.0
 var _heading_pan := 0.0                # degrees the camera has panned back with him as he turns toward the curl
 var _tube_time := 0.0
@@ -270,7 +273,7 @@ func _process(delta: float) -> void:
 	_ride_input.process(delta)
 	_read_held_keys(delta)
 	var model := _stage.model
-	var lip_phase := WaveStage.lip_phase_at(rider.d, _time)
+	var lip_phase := WaveStage.lip_phase_at(rider.d, WaveStage.lip_travel)
 	var lip_landing := lip_phase >= WaveStage.LIP_LANDING_PHASE and lip_phase < WaveStage.LIP_LANDING_PHASE + 0.1
 	match cycle.update(delta, rider, model, lip_landing):
 		"wipeout":
@@ -283,6 +286,7 @@ func _process(delta: float) -> void:
 			_on_ride_over()
 	model.swell = cycle.swell
 	_stage.show_set(cycle.approach())
+	_stage.place_wave(cycle.wave_shift(), cycle.closeout())
 	if cycle.riding():
 		_moves.update(delta, rider, _ride_input)
 		rider.step(delta, _ride_input.steer, _ride_input.take_height_push(), model, _tuning)
@@ -321,9 +325,10 @@ charge %.1f   release %.1f   float %.1f   spray %.2f   %s" % [
 	for ridge in _ridges:
 		ridge.place(_travel, size.y, _crop)
 	_place_surfer_and_spray()
-	_wave_spray.update(_stage, _time)
+	if _stage.wave_home():
+		_wave_spray.update(_stage)
 	if cycle.riding():
-		_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.spray_power, _time)
+		_stage.carve_trail.carve(delta, rider.d, rider.u, rider.theta, rider.spray_power, WaveStage.lip_travel)
 	if _auto_burst:
 		_auto_burst_in -= delta
 		if _auto_burst_in <= 0.0:
@@ -429,6 +434,13 @@ func lull_now() -> void:
 		_on_lull()
 
 
+## Testing: the wave closes out now, ending the ride.
+func closeout_now() -> void:
+	if cycle.riding():
+		cycle.close_out()
+		_on_ride_over()
+
+
 ## Testing: the next set starts rolling in now (from the lineup, or ending this ride).
 func set_now() -> void:
 	if cycle.riding() or cycle.state == RideCycle.State.WIPEOUT:
@@ -520,7 +532,7 @@ func _update_tube(delta: float) -> void:
 	if _moves.playing() and _moves.move == "tube" and model.barrel() < WaveModel.BARREL_THRESHOLD and reef.weight_of(SectionDirector.Kind.REEF_BOWL, REEF_SAMPLE_D) < 0.3:
 		_moves.stop()
 		_place_rider_steer(DEFAULT_PEEL_OFFSET)
-	var phase := WaveStage.lip_phase_at(rider.d, _time)
+	var phase := WaveStage.lip_phase_at(rider.d, WaveStage.lip_travel)
 	if not _slung and _tube_time >= SLINGSHOT_AFTER and rider.d > SLINGSHOT_D and rider.vel_d > 0.0 and phase >= WaveStage.LIP_LANDING_PHASE:
 		spit_out()
 
@@ -795,7 +807,10 @@ func _sink_surfer() -> void:
 	sink -= FLOAT_BOB * sit * sin(_time * FLOAT_RATES.x * TAU)
 	spin = Basis(Vector3.FORWARD, FLOAT_ROCK * sit * sin(_time * FLOAT_RATES.y * TAU + 0.7)) * spin
 	_surfer3d.transform = Transform3D(spin * _surfer3d.transform.basis, _surfer3d.transform.origin + Vector3.DOWN * sink)
-	_surfer3d.set_down(sit, curl)
+	# (lying down to paddle he leaves the sit; catching the set's wave he strokes harder)
+	var paddle := cycle.paddle()
+	_stroke += TAU * (STROKE_RATES.y if cycle.state == RideCycle.State.SET else STROKE_RATES.x) * get_process_delta_time()
+	_surfer3d.set_down(sit * (1.0 - paddle), curl, paddle, _stroke)
 
 
 ## A faint key list in the lower left for testing. H hides it.

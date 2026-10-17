@@ -163,6 +163,8 @@ func _trigger(world: Control, event: String) -> void:
 		world.lull_now()
 	elif event == "set":
 		world.set_now()
+	elif event == "closeout":
+		world.closeout_now()
 	elif event.begins_with("pose:") and world._surfer3d:
 		world._surfer3d.held_pose = event.trim_prefix("pose:")
 

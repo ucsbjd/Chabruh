@@ -421,18 +421,21 @@ const STEPS = [
   },
   {
     n: 12, status: "todo",
-    title: "3D surfer polish: poses, lighting, hands",
-    goal: "Finish the real-time surfer so he looks good from every state: the full pose library, lighting that reads cleanly on his back in every mood, and the small details.",
+    title: "3D surfer polish and the camera: poses, lighting, hands, a view down the line",
+    goal: "Finish the real-time surfer so he looks good from every state (the full pose library, lighting that reads cleanly on his back in all five moods, the small details), and move the camera more behind his head so the wave coming down the line fills the view and less of the shoulder shows: a little more 3D.",
     build: [
-      "Remaining baked poses: vertical snap, barrel, floater, air, wipeout (soft tumble), and a refined crouch, from footage in storyboardimages/jbay_refs and the hand-posing workflow.",
-      "Fix the funky lighting on his back in the three moods (normals, band thresholds, rim side, mood colours), keeping the big flat bands.",
+      "Remaining baked poses: vertical snap, barrel, floater, air, wipeout (a soft tumble, to replace step 11's stand-in: RideCycle sinks and spins the trim pose in world.gd _sink_surfer) and sitting on the board in the lull (stand-in: crouch, sunk 0.7 m), plus a refined crouch, from footage in storyboardimages/jbay_refs and the hand-posing workflow.",
+      "Fix the funky lighting on his back in all five moods (golden, sunset, neon, dusk, bioluminescent; at night he should read as a dark figure with the aqua and lime rim, not grey), keeping the big flat bands: normals, band thresholds, rim side, mood colours.",
       "Finger curl, the pocket flap and button, the palm print, a face that holds up in profile; optional runtime foot pinning so poses blending never slides his feet.",
-      "Camera sway tied to his heading, now that he lives in the same 3D stage."
+      "The camera: today world.gd frames him at yaw 30 (down the line, from behind), swinging up to 10 more out on the shoulder and 4 more when a racecourse or bowl is coming (CAMERA_YAW_SHOULDER, CAMERA_YAW_SECTION), tucking to 22 in the tube, with a slow sway. Pivot it further round so it sits more behind his head looking down the line of travel, showing more of the wave ahead and less of the shoulder, by section (more on a racecourse and setting up for a bowl, tucked in the tube), and tie a little sway to his heading. If it needs it, lift the camera or move the horizon a touch, keeping his feet at 0.70 of the screen and his size about 0.26 to 0.40 of it.",
+      "Camera test hotkeys added to the step 11 overlay (top right, clickable): rotate the camera left and right in steps, a key to reset it, and the current offset shown in the overlay's status line, so I can find the angle I like and you can bake it into the constants. Check every new key against the ones already taken (1 to 8, G K Y Z X V N U Q, L C F T P, O B M R H, - = [ ] , .)."
     ],
-    notNow: ["Sound and the wave cycle."],
+    notNow: ["Sound mixing and the lineup loop (steps 13 and 14), the controls (step 16)."],
     verify: [
-      "A contact sheet of all poses in the three moods, in the wave, reads clean and matches the look sheet and the key frames.",
-      "Blending between any two poses never pops or slides the feet."
+      "A contact sheet of all poses in the five moods, in the wave, reads clean and matches the look sheet and the key frames.",
+      "Blending between any two poses never pops or slides the feet; the wipeout and lull use the new poses.",
+      "With the camera keys I can swing the view round behind his head and back; the default angle shows more of the wave down the line and less shoulder, and changes smoothly with the sections (try 4 to 7 and G).",
+      "Frame rate and the surfer's place on screen hold at the new angles (Claude reports a capture.ps1 -Perf number)."
     ]
   },
   {
@@ -440,10 +443,10 @@ const STEPS = [
     title: "Wave cycle: lineup, set, barrel",
     goal: "The whole loop: sit in the lineup, a set rolls in, ride a wave that builds into a barrel, drift back out, and do it again, forever.",
     build: [
-      "Lineup intro: calm water, walk or paddle out, a lull with idle floating, then a set approaches (swell lines on the horizon).",
-      "Each wave plays out the model's life cycle (swell, shoulder, barrel section, closeout), with size and hollowness varying from set to set.",
-      "Tube moment: gentler camera framing or zoom, light glowing through the lip, the deep crouch with hand-drag pose, hushed.",
-      "End of ride (the wave closes out or you kick out): drift back to the lineup, next set after a lull. No score, no stats.",
+      "Build on step 11, which already has: RideCycle (riding, soft wipeout, a 3.5 s glassy lull through WaveModel.swell, the next swell rising in 2 s), the reef sections that vary the wave along the ride, the tide that grows with the evening, and the green room (camera tuck, 0.88x time, the hush, the spit and slingshot). Extend those rather than starting again.",
+      "Lineup intro: calm water, walk or paddle out, sitting on the board in the lull with idle floating, then a set approaches (swell lines on the horizon) instead of the swell simply standing up under him.",
+      "Each wave plays out a life (swell, shoulder, the reef's sections, closeout), with size and hollowness varying from set to set on top of the tide; sets every 45 to 60 s with the lulls between them.",
+      "End of ride (the wave closes out or you kick out): drift back to the lineup, next set after a lull. No score, no stats. Keep the test overlay's K and Y working, and add a key for the next set.",
       "Lulls and sets vary a little but always feel calm."
     ],
     notNow: ["Music, polish."],
@@ -458,18 +461,19 @@ const STEPS = [
     title: "Sound and atmosphere",
     goal: "Make it feel like 80s surf culture at golden hour even with your eyes closed.",
     build: [
-      "Step 11 already brought the procedural stems, ocean bed, tube hush and splashes, and the time-of-day drift: this step tunes and mixes them by ear, adds wind and a mute button on screen.",
-      "Ambient ocean (swell, whitewater, wind), spray hiss tied to spray size, a muffled tube whoosh. Generated or synthesised, so no asset packs and no licensing worries.",
-      "Original synth-wave music in layers (pad, bass, arpeggio): only the calm pad in the lineup, more layers fading in as the ride flows.",
-      "Slow time-of-day drift over a session (golden hour, sunset, neon dusk) driving the whole world through the Palette.",
-      "Audio starts after the first tap, with a mute button. Volumes low and warm.",
-      "Keep the total download over the wire under about 25 MB."
+      "Step 11 already built the sound in code (MusicLayers with MusicDsp and MusicTasks): four synthwave stems at 98 BPM (pad, bass, gated drums, lead) fading in with Rider.flow, an ocean bed, a water lap in the lull, the tube roar and hush (low-pass on the Environment bus), spray splashes, started on the first press, Q mutes. Nobody has listened to it yet: this step judges and mixes it by ear.",
+      "Fix what sounds wrong (levels, the pad alone being quiet at -22 dB, any clicks at loop seams), and add what is missing: wind, a whitewater roar behind the break, spray hiss tied to spray size.",
+      "Variety so it never grates: a second chord progression or arrangement for later in the evening (dusk and night could change key or instrument), still generated, no asset packs.",
+      "A small on-screen mute button that is remembered between visits. Volumes low and warm. Check how long generation takes on a phone (desktop is about 0.5 s of CPU over 160 frames).",
+      "The evening (SolarClock: golden, sunset, dusk, night) already drives the look; check each stage looks good and tune colours if needed.",
+      "Keep the total download over the wire under about 25 MB (step 11 was about 10 MB)."
     ],
     notNow: ["New gameplay."],
     verify: [
-      "With sound on, the lineup is calm and a ride has swelling energy. No clicks, pops or grating loops.",
+      "With sound on, the lineup is calm and a ride has swelling energy as the flow builds. No clicks, pops or grating loops.",
+      "In the tube the sound goes hollow and comes back as he is spat out.",
       "Mute works and is remembered. The first tap starts audio with no console error.",
-      "Each stage of the time-of-day drift looks good, and the download size is within budget (Claude reports it)."
+      "Each stage of the evening looks and sounds good (Z X V N jump to them), and the download size is within budget (Claude reports it)."
     ]
   },
   {
@@ -479,6 +483,7 @@ const STEPS = [
     build: [
       "An 80s-styled title screen, a first-run hint for the two-finger gesture, guidance if the phone is held upright, and a loading bar.",
       "A pause menu: resume, mute, the feel dials, and re-setting my fingers: a gentle in-game version of the calibration (reuse Calibration and the analysis) so every player can fit the controls to their own trackpad or phone, plus the hidden tuning panel (backtick key or triple-tap).",
+      "Hide every test aid for players: the step 11 test overlay and status line, the key list, the readout and the game speed label, all off unless ?debug is in the URL (or a hidden key), so the shipped game shows no text at all.",
       "A performance pass: 60 fps on a mid-range phone, load time, export size, and a low-quality toggle if needed.",
       "Favicon, social share card and web manifest (installable).",
       "Safe areas, resize and orientation handling, and sensible Escape / back behaviour.",
@@ -501,7 +506,8 @@ const STEPS = [
       "One code path for touch and trackpad. Touch gives true two-finger positions, spread and twist; the Windows trackpad only gives scroll steps (see the step 6 findings), so whip and snap are read from path curvature and speed, and twist is optional.",
       "Ship rule-based snaps, floaters and cutbacks first (gesture features gated by where he is on the face), scaled by the calibration; add template matching only if the rules misfire.",
       "Calibration: extend the existing recorder (tools/calibrate.ps1, tools/analyze_calibration.py, tools/replay.ps1) with the five actions (trim and clutch, open carve, hit the lip, floater, cutback), five trials each, robust to the one worst trial, saved to user://control_profile.json and also available from an in-game option. Replay existing recordings through the new input to retune data/tuning.tres.",
-      "Keyboard stays as the fallback. Never let the wheel scroll the page."
+      "Keyboard stays as the fallback. Never let the wheel scroll the page.",
+      "Re-check the step 11 moves with the new controls: stalling into a bowl's barrel and driving out for the spit, cutting back in a deep channel, pumping a racecourse. The flow should build from good hands (Rider.flow), and jerky input should not wipe him out."
     ],
     notNow: ["New features: this step is the controls only."],
     verify: [

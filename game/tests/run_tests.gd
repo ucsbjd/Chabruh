@@ -1272,3 +1272,127 @@ func _test_surfer_3d() -> void:
 	_check(looked_up and not looked_down, "in a bottom turn he looks up the face where he is going, not down at the water")
 	_check(is_equal_approx(surfer.BOARD_TAIL.x, 0.95 - Surfer3D.BOARD_SHIFT), "the board sits forward under him, back foot by the tail")
 	surfer.free()
+	_test_gold_moves()
+	_test_pose_library()
+
+
+## Step 12's poses: the whole library is baked, blending between riding poses never slides his feet, and down in the
+## water (the wipeout's tumble, the lull's sit) the free poses take the hands and feet off the deck.
+func _test_pose_library() -> void:
+	var surfer := Surfer3D.new()
+	root.add_child(surfer)
+	var names := surfer.pose_names()
+	var missing := []
+	for pose_name: String in ["trim", "crouch", "bottom_turn", "top_turn", "snap", "barrel", "floater", "air", "tumble", "sit"]:
+		if not pose_name in names:
+			missing.append(pose_name)
+	_check(missing.is_empty(), "the 3D surfer has the whole pose library (missing: %s)" % [missing])
+	var to_model := surfer._skeleton_to_model()
+	var slide := 0.0
+	var riding: Array[String] = ["crouch", "bottom_turn", "top_turn", "snap", "barrel", "floater", "air"]
+	for from_pose: String in riding:
+		for to_pose: String in riding:
+			if from_pose == to_pose:
+				continue
+			for n in names:
+				surfer.set_target(n, 1.0 if n == from_pose else 0.0)
+			for i in 30:
+				surfer.step(1.0 / 60.0)
+			for n in names:
+				surfer.set_target(n, 1.0 if n == to_pose else 0.0)
+			for i in 20:
+				surfer.step(1.0 / 60.0)
+				for leg in Surfer3D.LEGS:
+					var ankle := to_model * surfer._global(surfer.skeleton.find_bone(leg[2])).origin
+					slide = maxf(slide, ankle.distance_to(surfer._foot_target[leg[3]]))
+	_check(slide < 0.02, "blending between any two riding poses never slides his feet (%.3f m at most)" % slide)
+	var shoulder_before := to_model * surfer._global(surfer.skeleton.find_bone("upperarm02.L")).origin
+	for n in names:
+		surfer.set_target(n, 0.0)
+	surfer.set_down(1.0, 0.0)
+	surfer._apply_down()
+	for i in 90:
+		surfer.step(1.0 / 60.0)
+	var hips := to_model * surfer._global(surfer.skeleton.find_bone("root")).origin
+	var feet := (to_model * surfer._global(surfer.skeleton.find_bone("foot.L")).origin + to_model * surfer._global(surfer.skeleton.find_bone("foot.R")).origin) / 2.0
+	var hands := (to_model * surfer._global(surfer.skeleton.find_bone("wrist.L")).origin + to_model * surfer._global(surfer.skeleton.find_bone("wrist.R")).origin) / 2.0
+	_check(surfer.weight("sit") > 0.9 and surfer._free > 0.9, "in the lull the sit pose takes over (%.2f)" % surfer.weight("sit"))
+	_check(hips.y < 0.45 and feet.y < -0.15, "sitting astride the board his hips are down by the deck and his feet hang in the water (hips %.2f m, feet %.2f m)" % [hips.y, feet.y])
+	_check(absf(hands.y) < 0.25, "sitting, his hands rest by the rails (%.2f m)" % hands.y)
+	_check(shoulder_before.y - (to_model * surfer._global(surfer.skeleton.find_bone("upperarm02.L")).origin).y > 0.35, "sitting he is a lot lower than standing")
+	surfer.set_down(0.0, 1.0)
+	surfer._apply_down()
+	for i in 90:
+		surfer.step(1.0 / 60.0)
+	var head := to_model * surfer._global(surfer.skeleton.find_bone("head")).origin
+	var wrist := to_model * surfer._global(surfer.skeleton.find_bone("wrist.L")).origin
+	_check(surfer.weight("tumble") > 0.9 and surfer.weight("sit") < 0.1, "tumbling, the curled-up pose takes over from sitting")
+	_check(head.y < 0.95 and wrist.distance_to(head) < 0.35, "curled up, his head is down and his hands hold it (head %.2f m, hand %.2f m away)" % [head.y, wrist.distance_to(head)])
+	surfer.set_down(0.0, 0.0)
+	surfer.set_target("crouch", 0.6)
+	surfer._apply_down()
+	_check(is_equal_approx(surfer.target("crouch"), 0.6) and surfer.target("sit") == 0.0, "riding again, the riding poses come back")
+	surfer.set_down(1.0, 0.0)
+	surfer._apply_down()
+	_check(surfer.target("crouch") == 0.0, "down in the water the riding poses give way")
+	_check(surfer.material.get_shader_parameter("palm_print") is Texture2D and "surfer_ink" in surfer.material.shader.code, "his shorts carry the palm print and the pocket's button has its ink")
+	surfer.free()
+
+
+## Where one of his joints is in the world.
+func _joint(surfer: Surfer3D, bone: String) -> Vector3:
+	return surfer.transform * (surfer._skeleton_to_model() * surfer._global(surfer.skeleton.find_bone(bone)).origin)
+
+
+## The two moves off the top, posed from the gold-standard slow-motion clip (storyboardimages/move_refs, docs/balance.md
+## "Gold standard"), played by their hotkeys with the real-time surfer following.
+func _test_gold_moves() -> void:
+	var tuning: TuningData = load("res://data/tuning.tres")
+	for move_name: String in ["lip_hit", "cutback"]:
+		var wave := WaveModel.new()
+		wave.size = 0.5
+		var rider := Rider.new()
+		rider.place(3.0, 0.5)
+		var input := RideInput.new()
+		var moves := MovePlayer.new()
+		var surfer := Surfer3D.new()
+		root.add_child(surfer)
+		moves.play(move_name)
+		var seen := {"snap_frames": 0, "arm_up": 0, "back_level": 0, "rail_up": false, "sweep": false, "point_back": false, "elbow_up": false, "tall": 0.0, "folded": 9.0}
+		for i in 720:
+			moves.update(1.0 / 60.0, rider, input)
+			rider.step(1.0 / 60.0, input.steer, input.take_height_push(), wave, tuning)
+			rider.take_burst()
+			surfer.follow(rider, wave, 1.0 / 60.0)
+			var head := _joint(surfer, "head")
+			var front_hand := _joint(surfer, "wrist.L")
+			var back_hand := _joint(surfer, "wrist.R")
+			var back_shoulder := _joint(surfer, "upperarm01.R")
+			var feet := (_joint(surfer, "foot.L") + _joint(surfer, "foot.R")) * 0.5
+			var theta := rad_to_deg(rider.theta)
+			if rider.snapping and theta < 50.0 and theta > -30.0:
+				seen.snap_frames += 1
+				seen.arm_up += 1 if front_hand.y > head.y else 0
+				seen.back_level += 1 if absf(back_hand.y - back_shoulder.y) < 0.25 and Vector2(back_hand.x - back_shoulder.x, back_hand.z - back_shoulder.z).length() > 0.3 else 0
+			if (rider.cutback_coming or rider.cutting_back) and not rider.rebounding and theta > -20.0:
+				seen.rail_up = seen.rail_up or back_hand.y > head.y
+			if rider.cutting_back and not rider.rebounding and theta < -50.0 and theta > -110.0:
+				seen.sweep = seen.sweep or (absf(back_hand.y - head.y) < 0.35 and back_hand.x < back_shoulder.x - 0.25)
+			if rider.cutting_back and not rider.rebounding and theta < -150.0:
+				var front_shoulder := _joint(surfer, "upperarm01.L")
+				seen.point_back = seen.point_back or (front_hand.x > front_shoulder.x + 0.3 and absf(front_hand.y - front_shoulder.y) < 0.3)
+				seen.tall = maxf(seen.tall, head.y - feet.y)
+			if rider.rebounding:
+				seen.elbow_up = seen.elbow_up or _joint(surfer, "lowerarm01.R").y > back_shoulder.y
+				seen.folded = minf(seen.folded, head.y - feet.y)
+		if move_name == "lip_hit":
+			_check(seen.snap_frames > 5 and seen.arm_up > seen.snap_frames * 0.6, "hitting the lip the front arm is straight up over his head as the board pivots (%d of %d frames)" % [seen.arm_up, seen.snap_frames])
+			_check(seen.back_level > seen.snap_frames * 0.6, "...while the back arm holds out level behind him (%d of %d frames)" % [seen.back_level, seen.snap_frames])
+		else:
+			_check(seen.rail_up, "in a cutback's turn-in the back arm goes up over his head")
+			_check(seen.sweep, "carving round, the back arm sweeps out at head height the way he came")
+			# (in trim his head is about 1.2 m over his feet)
+			_check(seen.point_back and seen.tall > 1.12, "facing back he stands up tall again, pointing the front arm at the whitewater (head %.2f m over his feet)" % seen.tall)
+			_check(seen.elbow_up and seen.folded < seen.tall - 0.15, "knocked back off the foam he folds and his back elbow comes up (head %.2f m over his feet)" % seen.folded)
+		surfer.free()
+		input.free()

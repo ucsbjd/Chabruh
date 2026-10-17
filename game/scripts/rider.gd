@@ -102,6 +102,7 @@ const CUT_PIVOT := 0.2
 const CUT_GRIP := 0.6
 const CUT_SWEEP := 2.5
 const RAIL_SPRAY := 2.2              # how thick the sheet the rail throws carving round is, per unit of speed times turn rate
+const CUT_BURST_SHARE := 0.45        # how much of a carve's burst a cutback still throws (the curtain does the rest)
 const CUT_DRAG := 0.5
 const CUT_FROM := 0.3
 const CUT_TOP := 0.8
@@ -124,6 +125,17 @@ const PUMP_SWING := 0.32
 const PUMP_SLACK := 0.5
 const PUMP_RANGE := 2.5
 const PUMP_CROUCH := 0.18
+## The crouch through the two moves off the top (the gold standard): sitting back at the lip as the board pivots
+## (LIP_SIT) and compact coming down after it (FLOAT_TUCK); deep through a cutback's turn and carve (CUT_CROUCH), taller
+## facing back toward the curl (CUT_TALL), folded over the front knee as the board is knocked back (REBOUND_FOLD), with
+## his weight forward there (REBOUND_PITCH, radians).
+const LIP_SIT := 0.45
+const FLOAT_TUCK := 0.25
+const CUT_CROUCH := 0.5
+const CUT_TALL := 0.3
+const REBOUND_FOLD := 0.45
+const REBOUND_PITCH := 0.25
+const AFTER_REBOUND_TIME := 0.45
 const PUMP_HEADING := 0.6            # radians: pumping is small turns about the line; steeper than this a push is a move, not a pump
 ## Exploding up: loaded low on the face (below CHARGE_TOP), the press of the bottom turn and its turn rate charge him up
 ## (CHARGE_RATE a second per g of extra load or full turn rate), and as the nose comes up he extends and the charge
@@ -309,7 +321,13 @@ var _since_down := 1.0               # seconds since the last push down the face
 var _carving_down := false           # a push down began below the lip off a climb that was not committed to it, and is still
                                      # held: a carved turn, never a snap
 var _cut_armed := false              # ...and it began out in front: a cutback if it goes on
+## The cutback's turn has begun out in front and is still being held: the body starts the move (the gold standard's
+## turn-in) before the hold commits it.
+var cutback_coming: bool:
+	get:
+		return _cut_armed
 var _cut_held := 0.0                 # seconds the armed push has been held
+var _after_rebound := 0.0            # 1 as the board comes back round after a cutback, fading over AFTER_REBOUND_TIME
 var _lip_hold := 0.0                 # 0 to 1: how much the lip is holding the tail
 var _snap_to := 0.0                  # the heading a snap is turning the nose to
 var _last_burst := 0.0               # speed times sharpness of the last burst, while it is recent
@@ -381,6 +399,7 @@ func place(meters_ahead: float, face_height: float) -> void:
 	_since_down = 1.0
 	_cut_armed = false
 	_carving_down = false
+	_after_rebound = 0.0
 	pumping = 0.0
 	_press_curve = 0.0
 	_push_along = 0.0
@@ -686,6 +705,9 @@ func step(delta: float, steer: float, height_push: float, model: WaveModel, tuni
 	# His centre of mass sits over his feet along it: a hard turn's drag puts him back over the tail.
 	_push_along = lerpf(_push_along, a_drag + a_pump + a_release + a_float, 1.0 - exp(-delta / LOAD_SMOOTHING))
 	pitch = clampf(atan2(_push_along, press), -PITCH_MAX, PITCH_MAX)
+	# (the foam knocks the board back round under him and his weight goes forward over the front knee)
+	if _rebounding:
+		pitch = maxf(pitch, REBOUND_PITCH)
 	var felt := f * press * tan(pitch) + s * (v * carve_omega + g * s.y) + n * press
 	# With hardly any press under the board (gravity nearly all along a near-vertical face) the felt pull is tiny, so his
 	# body is free to stay near upright while the board goes vertical under him (J-Bay, 15.4 to 18.6 s).
@@ -756,10 +778,23 @@ func _update_crouch(delta: float, model: WaveModel, tuning: TuningData) -> void:
 	_load_rhythm = clampf(_load_rhythm, -0.3, 0.45)
 	# (he sinks as he drops down the face, not just for pointing down it: run along the bottom, he comes back up)
 	var dropping := clampf(-theta / 0.9, 0.0, 1.0) * clampf(-vel_u / DROP_SINK_RATE, 0.0, 1.0)
-	# Round in a cutback he is very compact, knees almost touching; pumping, he folds as the nose goes down the face.
-	var round_back := clampf((-theta - 1.7) / 0.6, 0.0, 1.0)
+	# The two moves off the top have the crouch of the gold-standard slow-motion clip (docs/balance.md, "Gold standard"):
+	# hitting the lip he sits back and down as the board pivots and stays compact coming down; in a cutback he is deep
+	# through the turn-in and the carve, stands tall facing back toward the curl, and folds deep over the front knee as
+	# the foam knocks the board back. Pumping, he folds as the nose goes down the face.
+	var lip := maxf(1.0 if snapping else 0.0, release) * LIP_SIT + afloat * FLOAT_TUCK
+	var cut := 0.0
+	# (and he stays compact in the foam a moment after the board has come round)
+	_after_rebound = move_toward(_after_rebound, 0.0, delta / AFTER_REBOUND_TIME)
+	if _rebounding:
+		cut = REBOUND_FOLD
+	elif _after_rebound > 0.0:
+		cut = REBOUND_FOLD * _after_rebound
+	elif cutting_back or _cut_armed:
+		# (he starts to stand up as the board comes round past straight down, so he is tall by the time he faces back)
+		cut = lerpf(CUT_CROUCH, -CUT_TALL, smoothstep(-1.6, -2.3, theta))
 	var pump_fold := PUMP_CROUCH * pumping * -sin(_pump_phase)
-	var target_crouch := clampf(0.15 + 0.2 * speed + 0.45 * dropping + 0.35 * round_back + pump_fold + _load_rhythm + model.barrel_amount_at(d, u) * 0.65 + TUCK_CROUCH * tuck, 0.05, 1.0)
+	var target_crouch := clampf(0.15 + 0.2 * speed + 0.45 * dropping + lip + cut + pump_fold + _load_rhythm + model.barrel_amount_at(d, u) * 0.65 + TUCK_CROUCH * tuck, 0.05, 1.0)
 	compression_vel += (COMPRESSION_K * (target_crouch - compression) - COMPRESSION_D * compression_vel) * delta
 	compression = clampf(compression + compression_vel * delta, 0.0, 1.0)
 
@@ -865,6 +900,7 @@ func _update_cutback(push: float, delta: float) -> void:
 	if _rebounding and theta > CUT_DONE:
 		cutting_back = false
 		_rebounding = false
+		_after_rebound = 1.0
 
 
 ## The strength of a spray that should be thrown now, 0 to 1, or 0 for none. Asking clears it, and sets `burst_release`
@@ -889,6 +925,10 @@ func _update_spray(delta: float, tuning: TuningData, peel: float) -> void:
 		_last_burst = 0.0
 	var lip := 1.0 + LIP_SPRAY * lip_hit
 	var carving := speed * sharpness * lip * (1.0 - FLOAT_QUIET * afloat * (1.0 - release))
+	# (carving round a cutback the rail throws its curtain, not a burst: in the gold standard there is no explosion at the
+	# top of the arc, the sheet grows off the rail behind him)
+	if cutting_back and not _rebounding:
+		carving *= CUT_BURST_SHARE
 	_carried = maxf(v, lerpf(_carried, v, 1.0 - exp(-delta / CARRIED_MEMORY)))
 	var shedding := release * maxf(_carried - STALL_SPEED * peel, 0.0) / (RELEASE_SPRAY * peel) * lip
 	var power := maxf(carving, shedding)

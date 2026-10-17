@@ -11,6 +11,8 @@ extends SceneTree
 ##   ride=stall        steer hard back for 3 s (stall into the pocket), then let go, again every 6 s
 ##   ride=cutback      the cutback the C key plays (MovePlayer), again each time it finishes
 ##   move=lip_hit      any move the hotkeys play (lip_hit, cutback, floater, tube, pump), again each time it finishes
+##   camera=-30        degrees added to the camera's swing (the overlay's 9 and 0 keys); -30 looks straight at the wave
+##                     from the beach, like the reference footage
 ##   ride=chase        steer far down the line, so he pumps for speed
 ##   ride=floater      drive up to the top and let go, so he floats along it
 ##   readout=yes       show the debug readout (speed, lean, load, balance)
@@ -18,13 +20,14 @@ extends SceneTree
 ##                     are then ignored); without it the mood option is used and the evening is held
 ##   reef=on           let reef sections come by themselves (off by default, so captures repeat)
 ##   events=bowl@0,wipeout@200   at those frames: a section (wall, channel, race, bowl) sent in from down the line, or
-##                     barrel (G), wipeout (K), lull (Y)
+##                     barrel (G), wipeout (K), lull (Y), or pose:sit to hold one of the 3D surfer's baked poses (pose:
+##                     alone lets go again)
 ##   overlay=no        hide the test buttons and key list
 ## (peel is how many meters ahead of the peel point the surfer is.) It also prints the average frame
 ## time over the last two thirds of the frames. Add --disable-vsync (and use plenty of frames) to see
 ## what the GPU can sustain.
 
-const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": "", "move": "", "solar": "", "reef": "off", "events": "", "overlay": "yes"}
+const DEFAULTS := {"out": "capture.png", "size": "0.5", "hollow": "0.5", "peel": "3.0", "mood": "sunset", "frames": "45", "pose": "ride", "gallery": "no", "snaps": "", "burst": "", "height": "", "s3d": "", "cycle": "0", "carve": "0", "readout": "no", "ride": "", "move": "", "solar": "", "reef": "off", "events": "", "overlay": "yes", "camera": "0"}
 
 
 func _initialize() -> void:
@@ -61,6 +64,7 @@ func _initialize() -> void:
 		ride_from = float(heights[0])
 		ride_to = float(heights[heights.size() - 1])
 		world._ride_input.height = ride_from
+	world.camera_offset = float(options.camera)
 	if options.readout == "yes":
 		world._readout.visible = true
 	if options.gallery == "yes":
@@ -157,6 +161,8 @@ func _trigger(world: Control, event: String) -> void:
 		world.wipeout_now()
 	elif event == "lull":
 		world.lull_now()
+	elif event.begins_with("pose:") and world._surfer3d:
+		world._surfer3d.held_pose = event.trim_prefix("pose:")
 
 
 ## "0.5@30,1.0@80" becomes {30: [0.5], 80: [1.0]}.

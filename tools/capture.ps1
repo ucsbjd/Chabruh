@@ -29,6 +29,7 @@ param(
     [switch]$Readout,
     [ValidateSet('', 'cycle', 'stall', 'cutback', 'chase', 'floater')][string]$Ride = '',
     [ValidateSet('', 'lip_hit', 'cutback', 'floater', 'tube', 'pump')][string]$Move = '',
+    [double]$Camera = 0,
     [string]$Solar = '',
     [string]$Events = '',
     [switch]$Reef,
@@ -43,7 +44,7 @@ $full = if ([IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path (Get-Locati
 $arguments = @('--path', "`"$Root\game`"", '--rendering-driver', 'opengl3', '--resolution', $Resolution, '--fixed-fps', '60')
 if ($Perf) { $arguments += '--disable-vsync' }
 $arguments += @('--quit-after', ($Frames + 300), '--script', 'res://tests/capture.gd', '--',
-    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride", "move=$Move", "solar=$Solar", "events=$Events", "reef=$(if ($Reef) { 'on' } else { 'off' })", "overlay=$(if ($NoOverlay) { 'no' } else { 'yes' })")
+    "`"out=$full`"", "size=$Size", "hollow=$Hollow", "peel=$Peel", "mood=$Mood", "frames=$Frames", "pose=$Pose", "gallery=$(if ($Gallery) { 'yes' } else { 'no' })", "snaps=$Snaps", "burst=$Burst", "height=$Height", "s3d=$Surfer3d", "cycle=$Cycle", "carve=$Carve", "readout=$(if ($Readout) { 'yes' } else { 'no' })", "ride=$Ride", "move=$Move", "camera=$Camera", "solar=$Solar", "events=$Events", "reef=$(if ($Reef) { 'on' } else { 'off' })", "overlay=$(if ($NoOverlay) { 'no' } else { 'yes' })")
 
 $process = Start-Process -FilePath $Godot -ArgumentList $arguments -NoNewWindow -PassThru
 if (-not $process.WaitForExit(120000)) {

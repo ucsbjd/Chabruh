@@ -20,9 +20,10 @@ const TRAVEL_SPEED_SLOW := 0.55
 const TRAVEL_SPEED_FAST := 1.45
 ## The camera always looks down the line, left from behind the surfer, so the wave coming toward them
 ## fills the screen and the break stays at their back. It eases a little less far round as a barrel forms.
-## Degrees, and the surfer's place across the screen.
-const CAMERA_YAW_OPEN := 30.0
-const CAMERA_YAW_BARREL := 24.0
+## Degrees, and the surfer's place across the screen. (Step 12 swung it 12 degrees further round, more behind his head:
+## the view shows more of his back and of the wall running away down the line, less of the shoulder.)
+const CAMERA_YAW_OPEN := 42.0
+const CAMERA_YAW_BARREL := 36.0
 const SURFER_SCREEN_X_OPEN := 0.47
 const SURFER_SCREEN_X_BARREL := 0.50
 const CAMERA_SWING_RATE := 2.5
@@ -78,7 +79,7 @@ const CAMERA_YAW_SHOULDER := 10.0
 const SHOULDER_LOOK_FROM := 4.0
 const SHOULDER_LOOK_FULL := 12.0
 const SURFER_SCREEN_X_SHOULDER := 0.06
-const CAMERA_YAW_SECTION := 4.0
+const CAMERA_YAW_SECTION := 8.0
 const SECTION_LOOK_AHEAD := 10.0
 const CAMERA_LOOK_RATE := 1.2
 const CAMERA_YAW_TUBE := 22.0
@@ -86,6 +87,23 @@ const CAMERA_FOV_TUBE := 19.5
 const CAMERA_DISTANCE_TUBE := 17.5
 const CAMERA_SWAY := Vector2(1.4, 0.7)
 const CAMERA_SWAY_RATES := Vector2(0.13, 0.31)
+## Like a camera operator following his line: turned round toward the curl in a cutback, the camera pans back with him
+## by up to this much (degrees), easing in and out at CAMERA_LOOK_RATE.
+const CAMERA_HEADING_PAN := 8.0
+## The real-time surfer is backlit, as in the key frames (kling-04 and kling-05): the low sun is over the sea in front of
+## the camera, so his back is in shade and the light catches his shoulders, the top of his head and the edges of his
+## arms. The light comes from straight ahead of the camera (KEY_AHEAD), a little to the sun's side (KEY_SIDE per screen
+## of the sun's offset), and from above by KEY_UP_HORIZON with the sun on the horizon, more as it stands higher
+## (KEY_UP_GAIN per screen height above it), between KEY_UP_LOW and KEY_UP_HIGH.
+const KEY_AHEAD := 0.75
+const KEY_SIDE := 1.5
+const KEY_UP_HORIZON := 0.22
+const KEY_UP_GAIN := 1.2
+const KEY_UP_LOW := 0.12
+const KEY_UP_HIGH := 0.5
+## The camera test keys turn it in steps of CAMERA_STEP degrees, at most CAMERA_OFFSET_MAX either way.
+const CAMERA_STEP := 10.0
+const CAMERA_OFFSET_MAX := 90.0
 
 ## The green room. In the tube (more than TUBE_IN of it, between TUBE_D meters of the peel point and below TUBE_U up the
 ## face) the camera tucks in over TUCK_TIME, and deep in it (past DILATION_DEPTH) time slows to DILATION and the sound
@@ -104,12 +122,13 @@ const SLINGSHOT_BOOST := 1.6
 const TUBE_FORGET := 0.4            # seconds out of the tube before the time in it is forgotten
 const SPIT_ANGLE := -170.0          # degrees on screen: out of the mouth, down the line (left) and a little up
 
-## The soft wipeout: he drifts back with the foam at DRIFT_BACK of the peel speed, tumbling TUMBLE_TURNS times, sinking
-## TUMBLE_SINK meters, then sits SIT_SINK down in the water through the lull until the next swell stands him up.
+## The soft wipeout: he drifts back with the foam at DRIFT_BACK of the peel speed, curled up (the tumble pose) and turning
+## over TUMBLE_TURNS times (a whole number, so he comes up the right way), sinking TUMBLE_SINK meters; then sits astride
+## the board (the sit pose), the board SIT_SINK down in the water, through the lull until the next swell stands him up.
 const DRIFT_BACK := 0.6
-const TUMBLE_TURNS := 1.25
+const TUMBLE_TURNS := 1.0
 const TUMBLE_SINK := 0.9
-const SIT_SINK := 0.7
+const SIT_SINK := 0.06
 
 var _time := 0.0
 var _travel := 0.0
@@ -148,7 +167,10 @@ var _game_speed := 1.0              # the , and . keys; the tube's dilation mult
 var _dilation := 1.0
 var _tuck := 0.0                    # 0 open, 1 tucked in for the tube
 var _look := 0.0                    # degrees the camera has swung round to look down the line
+## Testing the camera (step 12): degrees added to the camera's swing by the overlay's camera keys, to find the angle.
+var camera_offset := 0.0
 var _shoulder_x := 0.0
+var _heading_pan := 0.0                # degrees the camera has panned back with him as he turns toward the curl
 var _tube_time := 0.0
 var _out_of_tube := 0.0
 var _slung := false
@@ -523,7 +545,13 @@ func _status_text() -> String:
 	var tide := solar.tide()
 	return "%s %.2f%s   tide: size %.2f, hollow %.2f, peel x%.2f\nreef here: %s, next: %s\nflow %.2f   tube %.2f   time x%.2f   %s" % [
 		solar.phase_name(), solar.time, "" if solar.running else " (held)", tide.x, tide.y, _stage.model.peel_mult,
-		here, coming, rider.flow, _tuck, _dilation, RideCycle.State.keys()[cycle.state].to_lower()]
+		here, coming, rider.flow, _tuck, _dilation, RideCycle.State.keys()[cycle.state].to_lower()] + "
+camera %+d degrees (9 0 turn it, I resets)" % roundi(camera_offset)
+
+
+## Turns the camera round by `degrees` from where it is (0 puts it back to the default), to try angles (step 12).
+func turn_camera(degrees: float) -> void:
+	camera_offset = 0.0 if degrees == 0.0 else clampf(camera_offset + degrees, -CAMERA_OFFSET_MAX, CAMERA_OFFSET_MAX)
 
 
 ## The test hotkeys and their buttons down the right of the screen.
@@ -545,6 +573,10 @@ func _add_overlay() -> void:
 	_overlay.add_action(KEY_N, "bioluminescent night", evening_phase.bind(3))
 	_overlay.add_action(KEY_U, "hold / run the evening", toggle_evening)
 	_overlay.add_action(KEY_Q, "sound on / off", toggle_sound)
+	_overlay.add_group("camera")
+	_overlay.add_action(KEY_9, "turn camera left", turn_camera.bind(-CAMERA_STEP))
+	_overlay.add_action(KEY_0, "turn camera right", turn_camera.bind(CAMERA_STEP))
+	_overlay.add_action(KEY_I, "camera back to default", turn_camera.bind(0.0))
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_overlay.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_overlay.offset_left = -14.0
@@ -661,13 +693,15 @@ func _place_surfer_and_spray() -> void:
 	_shoulder_x = lerpf(_shoulder_x, SURFER_SCREEN_X_SHOULDER * shoulder, 1.0 - exp(-CAMERA_LOOK_RATE * delta))
 	_first_frame = false
 	var sway := CAMERA_SWAY.x * sin(_time * CAMERA_SWAY_RATES.x * TAU) + CAMERA_SWAY.y * sin(_time * CAMERA_SWAY_RATES.y * TAU + 1.3)
-	var yaw := lerpf(lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing) + _look + sway, CAMERA_YAW_TUBE, _tuck)
+	_heading_pan = lerpf(_heading_pan, CAMERA_HEADING_PAN * (1.0 - cos(rider.theta)) * 0.5, 1.0 - exp(-CAMERA_LOOK_RATE * delta))
+	var yaw := lerpf(lerpf(CAMERA_YAW_OPEN, CAMERA_YAW_BARREL, _swing) + _look + sway - _heading_pan, CAMERA_YAW_TUBE, _tuck) + camera_offset
 	var screen_x := lerpf(lerpf(SURFER_SCREEN_X_OPEN, SURFER_SCREEN_X_BARREL, _swing) + _shoulder_x, SURFER_SCREEN_X_BARREL, _tuck)
 	_stage.frame(_focus, yaw, screen_x, lerpf(WaveStage.CAMERA_FOV, CAMERA_FOV_TUBE, _tuck), lerpf(WaveStage.CAMERA_DISTANCE, CAMERA_DISTANCE_TUBE, _tuck))
 	var feet_px := _stage.project(feet)
 	var head_px := _stage.project(feet + Vector3(0.0, WaveModel.SURFER_HEIGHT, 0.0))
 	_surfer.place(feet_px, feet_px.y - head_px.y)
 	if _surfer3d:
+		_light_surfer()
 		_surfer3d.follow(rider, model, get_process_delta_time())
 		_sink_surfer()
 		_spray.set_hand_drag(_stage.project(_surfer3d.hand_spray_point), _surfer3d.hand_spray)
@@ -702,15 +736,21 @@ func _read_held_keys(delta: float) -> void:
 		_panel.show_values(clampf(tide.x + _size_offset, 0.0, 1.0), clampf(tide.y + _hollow_offset, 0.0, 1.0), peel_offset)
 
 
-## Down in the water: tumbling under the foam after a wipeout, then sitting low on the board through the lull.
+## Down in the water: tumbling under the foam after a wipeout (curled up, arms round his head), then sitting astride
+## the board through the lull.
 func _sink_surfer() -> void:
 	if cycle.riding():
+		_surfer3d.set_down(0.0, 0.0)
 		return
 	var tumble := cycle.tumble()
-	var sink := SIT_SINK * cycle.sunk() + TUMBLE_SINK * sin(PI * tumble)
+	var wiping := cycle.state == RideCycle.State.WIPEOUT
+	# (he uncurls while still under the foam, so he comes up already sitting on the board)
+	var curl := smoothstep(0.0, 0.12, tumble) * (1.0 - smoothstep(0.5, 0.75, tumble)) if wiping else 0.0
+	var sit := smoothstep(0.5, 0.85, tumble) if wiping else cycle.sunk()
+	var sink := SIT_SINK * sit + TUMBLE_SINK * sin(PI * tumble)
 	var spin := Basis(Vector3.RIGHT, TAU * TUMBLE_TURNS * smoothstep(0.0, 1.0, tumble))
 	_surfer3d.transform = Transform3D(spin * _surfer3d.transform.basis, _surfer3d.transform.origin + Vector3.DOWN * sink)
-	_surfer3d.set_target("crouch", cycle.sunk())
+	_surfer3d.set_down(sit, curl)
 
 
 ## A faint key list in the lower left for testing. H hides it.
@@ -767,6 +807,9 @@ func _set_surfer_3d(on: bool) -> void:
 		_surfer3d.queue_free()
 		_surfer3d = null
 	_surfer.visible = not on
+	# (the spray behind the real-time surfer leaves out his silhouette; the sprite sits above the back layer anyway)
+	for spray: SurferSpray in [_spray, _front_spray]:
+		spray.set_surfer_mask(_stage.surfer_mask() if on else null)
 
 
 func _on_panel_changed(wave_size: float, hollowness: float, ahead_of_peel: float) -> void:
@@ -794,6 +837,17 @@ func _on_resized() -> void:
 		material.set_shader_parameter("layout_aspect", layout_aspect)
 		material.set_shader_parameter("horizon", HORIZON)
 	_place_sun()
+
+
+## Lights the real-time surfer from the sun: in front of the camera, over the sea, as high as it stands (see KEY_AHEAD).
+func _light_surfer() -> void:
+	var camera := _stage.camera_basis()
+	var ahead := Vector3(-camera.z.x, 0.0, -camera.z.z).normalized()
+	var side := Vector3(camera.x.x, 0.0, camera.x.z).normalized()
+	var up := clampf(KEY_UP_HORIZON + KEY_UP_GAIN * (HORIZON - _sun_y), KEY_UP_LOW, KEY_UP_HIGH)
+	var key := (ahead * KEY_AHEAD + side * KEY_SIDE * (SUN_X_FRACTION - 0.5) + Vector3.UP * up).normalized()
+	_surfer3d.material.set_shader_parameter("key_dir", key)
+	_surfer3d.veil.set_shader_parameter("key_dir", key)
 
 
 ## The sun sinks through the evening (SolarClock.sun_height); the sky, the glow and the sea's glitter follow it.

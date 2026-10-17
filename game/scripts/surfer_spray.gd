@@ -38,6 +38,7 @@ const GIANT_AMOUNT := 0.4
 const GIANT_SPEED := 0.3
 const GIANT_LIFE := 0.4
 const GIANT_WIDTH := 0.15
+const GIANT_FRONT_CUT := 0.75        # how many fewer of a giant fan's fine droplets fly in front of the surfer
 const RAY_JITTER := 0.4              # each burst moves every ray by up to this share of the gap between rays, so no two fans match
 ## Air drag, meters per second of speed lost each second (Godot's particle damping is a fixed loss of speed per second,
 ## in pixels, so it is scaled by the surfer's size on screen): the slow droplets hang near the tail while the fast ones
@@ -80,6 +81,7 @@ var _droplet := SprayTextures.droplet()
 var _blob := SprayTextures.blob()
 var _sheet := SprayTextures.sheet()
 var _gradient := Gradient.new()
+var _behind := ShaderMaterial.new()  # the back layer leaves out the real-time surfer's silhouette
 var _edge_gradient := Gradient.new()
 var _flow := 0.0
 var _rim := 0.0
@@ -105,6 +107,9 @@ func _init() -> void:
 	_setup_hand()
 	_rail = _make_emitter(_back, _droplet)
 	_setup_rail()
+	_behind.shader = load("res://shaders/spray_behind.gdshader") as Shader
+	for emitter: CPUParticles2D in _back.get_children():
+		emitter.material = _behind
 	add_child(_back)
 
 
@@ -141,7 +146,8 @@ func burst(strength: float, centre_degrees := FAN_CENTRE, giant := 0.0) -> void:
 	var size_scale := DROPLET_SCALE * _pixels_per_meter / REFERENCE_PIXELS_PER_METER
 
 	_fire(_fans[index], int(lerpf(FAN_AMOUNT_GENTLE, FAN_AMOUNT_FULL, s) * more), life, centre_degrees, half_width, speeds, size_scale)
-	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s) * more), life * 0.9, centre_degrees, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
+	# (the giant fan is a backdrop: in the gold standard he reads in front of it, so few of its droplets fly in front of him)
+	_fire(_edges[index], int(lerpf(0.0, EDGE_AMOUNT_FULL, s * s) * more * (1.0 - GIANT_FRONT_CUT * big)), life * 0.9, centre_degrees, half_width * 1.12, speeds * EDGE_SPEED_BOOST, size_scale * 0.6)
 	_fire(_cores[index], int(lerpf(2.0, CORE_AMOUNT_FULL, s)), life * 0.6, centre_degrees, half_width * 0.8, speeds * 0.5, size_scale * 1.1)
 
 
@@ -183,6 +189,13 @@ func set_rail(amount: float, angle_degrees: float) -> void:
 		_rail.direction = Vector2.from_angle(deg_to_rad(angle_degrees))
 		_rail.initial_velocity_min = RAIL_SPEED.x * strength * _pixels_per_meter
 		_rail.initial_velocity_max = RAIL_SPEED.y * strength * _pixels_per_meter
+
+
+## The real-time surfer's silhouette (WaveStage.surfer_mask()), so the spray behind him leaves his shape out; null
+## when the sprite surfer is used (it is a 2D node, and the back layer already sits behind it).
+func set_surfer_mask(mask: Texture2D) -> void:
+	_behind.set_shader_parameter("surfer_mask", mask)
+	_behind.set_shader_parameter("masked", mask != null)
 
 
 ## Puts the spray on the board's tail. `tail` is in the parent's pixels, `pixels_per_meter` is the

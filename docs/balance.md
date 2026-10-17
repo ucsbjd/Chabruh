@@ -289,6 +289,70 @@ Each move works the same controls a player does, a phase at a time, watching whe
 or real mouse move takes the controls back. The move playing is shown next to the game speed. The sprite animation
 cycler moved from P to O. `tools\capture.ps1 -Move cutback` and `ride_trace.gd -- move=cutback` play them too.
 
+## Eighth pass: the gold standard's body (step 12)
+
+The user's brief: base both moves off the top on the slow-motion clip (`storyboardimages/move_refs`, the README there):
+the arms, balance, eyeline, load and energy transfer, and the time between frames. The seventh pass already timed the
+board; this pass poses the body on it. The frames were read with MediaPipe (`tools/foundry/refs/move_landmarks.py`,
+the measurements below) and by eye (MediaPipe often swaps his front and back on this surfer, so the eye wins where they
+disagree). Real seconds are the clip's divided by its slow-motion factor (about 4.5).
+
+### What the footage shows
+
+Hitting the lip (`lip_slowmo` 50.5 to 58.5 s, real time from the start of the climb):
+
+| phase | real s | body |
+| --- | --- | --- |
+| climbing into the lip | 0.0 | front arm reaching up along the board, back hand low behind, weight over the front foot, eyes on the lip |
+| at the lip | 0.28 | front arm straight up (wrist 0.56 trunk lengths above the shoulder, arm at 92 degrees), back arm out level behind (0.29 up), sitting back over the tail in a wide crouch, eyes down the face where he will drop |
+| the snap, board flat | 0.42 | front wrist still up (0.76), back arm level; the board pivots on its tail under a still body: all the load is on the back foot |
+| board down, the fan | 0.61 | front arm comes down to point where he drops; chest opening to the beach (0.58) |
+| coming round | 0.89 | compact, both hands at chest height, chest open |
+| floating down | 1.28 | upright, arms out wide and soft, no drive: the energy went into the fan at the top |
+
+The cutback (`lip_slowmo` 37.5 to 49.5 s):
+
+| phase | real s | body |
+| --- | --- | --- |
+| rising | 0.28 | low (crouch 0.93), back arm out behind, front arm low and forward, eyes on the face ahead |
+| turn-in | 0.59 | back arm straight up over his head (0.64 up), front hand down at the rail by the front foot (0.87 down): the load goes onto the inside rail |
+| the carve | 0.89 | back arm sweeps out at head height the way he came (155 degrees in the picture), front hand trailing down by the water (1.48 down), chest opening to the beach (0.63); he looks ahead of the board, round the turn |
+| laid back in the carve | 1.17 | chest to the camera (0.79), weight back, head leading the turn by about 50 degrees |
+| facing back | 1.67 | standing tall again (crouch 0.89 of his leg length), front arm pointing at the whitewater, back hand low at his side |
+| knocked back by the foam | 2.22 | his head swings round first, then he folds forward over the front knee (trunk 59 to 64 degrees from upright), back elbow up, front hand reaching down toward where he is going |
+| compact, riding on | 2.39 | knees together, low, for half a second before he stands |
+
+### The model (`Surfer3D._follow_moves`, `_place_hands`, `Rider._update_crouch`)
+
+- **Phases from the rider's state, eased** (`MOVE_BLEND` 0.1 s, the rebound's fold released over `REBOUND_HOLD`): `lip_reach`
+  (steep climb high on the face), `lip_up` (snapping or releasing, and the float while still high), `cut_rail`,
+  `cut_sweep` and `cut_point` (a cutback's turn-in, carve and facing back, by how far round the board is), `rebound`.
+- **The arms in his body's frame** (`_body_frame()`: up along his balance, chest to the wave), so "straight up" is over his
+  head however the board is tilted on the face: `LIP_REACH_HAND`, `ARM_UP`, `BACK_OUT`, `BACK_UP`, `POINT_BACK`,
+  `BACK_LOW`, `BACK_ELBOW_UP`. The carve's sweep runs along the wave (`SWEEP_REACH` back along the line he came,
+  `TRAIL_DOWN`/`TRAIL_BACK` for the front hand), and the turn-in's front hand goes to the rail (`FRONT_RAIL`, on the board).
+- **The torso:** at the lip he lays back toward the tail and a little to the beach (`LAYBACK`); knocked back he folds over
+  the front knee (`REBOUND_FOLD`); the fold, lay-back and rebound add up to one bend of the spine.
+- **The load:** the crouch follows the energy: sitting back at the lip as the board pivots (`LIP_SIT`), a small tuck while
+  afloat (`FLOAT_TUCK`), low turning in and tall facing back in a cutback (`CUT_CROUCH` to `CUT_TALL`), folded on the
+  rebound (`REBOUND_FOLD`, `REBOUND_PITCH`) and for `AFTER_REBOUND_TIME` after.
+- **The eyeline leads:** in a cutback he looks `CUT_LOOK_LEAD` (about 50 degrees) round the turn ahead of the board.
+- **The energy:** the turn-in's fan is a share (`CUT_BURST_SHARE`) of a lip hit's, because a cutback spends its speed
+  through the carve; the lip hit's giant fan is a backdrop he reads in front of (`GIANT_FRONT_CUT` fewer droplets in
+  front, and the spray behind him is masked by his silhouette, `WaveStage.surfer_mask()`).
+- **Baked poses** for the rest of the library (`tools/foundry/render_character.py`): `snap` (sitting back over the tail,
+  chest open, head turned down the face, hands open; `SNAP_SHARE` of it while snapping), `air` (knees drawn up as he
+  floats down, `AIR_SHARE`), `barrel` (compact, knees together), `floater` (taller, weight centred), and the two free
+  poses for the water, `tumble` and `sit` (`world.gd` `_sink_surfer`).
+
+### Checking it
+
+`tools\foundry\.venv\Scripts\python.exe tools\foundry\refs\compare_moves.py <lip_hit|cutback> <landmarks json> <video>
+<capture base> <out.jpg>` puts the footage above the game phase by phase, from a capture made from the beach like the
+footage (`capture.ps1 -Move cutback -Camera -30`). `tests/run_tests.gd` "gold" checks: the front wrist over his head
+through the snap, the back hand level and out, the back arm up in the turn-in and out at head height in the carve, the
+front hand pointing back and the head tall facing back, the elbow up and the fold on the rebound.
+
 ## Too jerky to ride (debug)
 
 He never falls (no hard fail), but `Rider.strain` says when a real surfer would have: the centre of mass more than 0.7
@@ -326,5 +390,5 @@ in the top right corner so it appears in screenshots, and `?speed=1.3` starts th
 - The back forearm over the head at the lip is hard to read from our camera behind him.
 - With no input after a hit in the pocket he recovers slowly at the flat foot of the face (about 3 s to the curl's pace);
   a player's next bottom turn takes him out at once. Step 11's controls should make that bottom turn easy to start.
-- The 3D surfer has no pose of its own for the stop at the top or the float (it reads the existing crouch, lean and
-  lead); a hang pose (back arm up, compact) would sell the stop.
+- The snap and air poses are a share of the body (`SNAP_SHARE`, `AIR_SHARE`); a real air (board leaving the water)
+  is not in the physics yet.

@@ -25,6 +25,11 @@ const LIP_SPACING := 15.0
 const LIP_LANDING_PHASE := 0.68
 ## A reshape (the wave following the reef or the tide) is built over several frames, this many microseconds a frame.
 const RESHAPE_BUDGET_USEC := 2500
+## The real-time surfer is also drawn alone, at MASK_SCALE of the screen's size, on the render layer SURFER_LAYER (a bit
+## mask), so the 2D spray that should fall behind him can leave out his silhouette (surfer_mask()). This 3D stage is one
+## layer of the 2D scene, below all the spray, so without it the whole fan paints over him.
+const SURFER_LAYER := 2
+const MASK_SCALE := 0.5
 
 ## The model that shapes this wave. Change its size and hollowness, then call rebuild().
 var model := WaveModel.new()
@@ -33,6 +38,8 @@ var carve_trail := WaveCarveTrail.new()
 
 var _viewport := SubViewport.new()
 var _camera := Camera3D.new()
+var _mask_viewport := SubViewport.new()
+var _mask_camera := Camera3D.new()
 var _wave_mesh := MeshInstance3D.new()
 var _water_mesh := MeshInstance3D.new()
 var _mist_mesh := MeshInstance3D.new()
@@ -61,6 +68,14 @@ func _init() -> void:
 	_camera.far = 6000.0
 	_camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	_viewport.add_child(_camera)
+	_mask_viewport.transparent_bg = true
+	_mask_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_mask_viewport)
+	_mask_camera.near = _camera.near
+	_mask_camera.far = _camera.far
+	_mask_camera.keep_aspect = Camera3D.KEEP_HEIGHT
+	_mask_camera.cull_mask = SURFER_LAYER
+	_mask_viewport.add_child(_mask_camera)
 
 	_wave_material.shader = WAVE_SHADER
 	_water_material.shader = WATER_SHADER
@@ -101,6 +116,8 @@ func _ready() -> void:
 	_water_material.set_shader_parameter("profile_d1", WaveModel.PROFILE_AHEAD)
 	_wave_material.set_shader_parameter("lip_period", LIP_PERIOD)
 	_wave_material.set_shader_parameter("lip_spacing", LIP_SPACING)
+	# (the surfer's silhouette is drawn from the same world as the wave, the surfer alone)
+	_mask_viewport.world_3d = _viewport.find_world_3d()
 	resized.connect(_fit_viewport)
 	_fit_viewport()
 	rebuild()
@@ -121,12 +138,17 @@ func _exit_tree() -> void:
 	_water_material.set_shader_parameter("profile", null)
 
 
-## The two shader materials, so the world can feed them the mood's colours.
 ## Puts something else (the real-time surfer) in the same 3D stage, so it shares the camera and the depth with the wave.
 func add_actor(node: Node3D) -> void:
 	_viewport.add_child(node)
 
 
+## The surfer alone, as a picture the size of this stage at MASK_SCALE: opaque where he is (see SURFER_LAYER).
+func surfer_mask() -> Texture2D:
+	return _mask_viewport.get_texture()
+
+
+## The shader materials, so the world can feed them the mood's colours.
 func materials() -> Array[ShaderMaterial]:
 	return [_wave_material, _water_material, _mist_material, _carve_material]
 
@@ -211,6 +233,13 @@ func frame(focus: Vector3, yaw_degrees: float, screen_x: float, fov_degrees := C
 	var ray := Vector3((screen_x - 0.5) * 2.0 * tan_half * aspect, -(SURFER_SCREEN_Y - 0.5) * 2.0 * tan_half, -1.0)
 	_camera.basis = basis
 	_camera.position = focus - basis * ray * distance
+	_mask_camera.fov = fov_degrees
+	_mask_camera.transform = _camera.transform
+
+
+## Which way the camera looks, in world axes (its forward is -Z, its right +X).
+func camera_basis() -> Basis:
+	return _camera.basis
 
 
 ## Where a world position lands on this control, in pixels of this control.
@@ -222,3 +251,4 @@ func _fit_viewport() -> void:
 	var window := get_window()
 	var pixels := Vector2(window.size) if window != null else size
 	_viewport.size = Vector2i(maxi(int(pixels.x), 16), maxi(int(pixels.y), 16))
+	_mask_viewport.size = Vector2i(maxi(int(pixels.x * MASK_SCALE), 8), maxi(int(pixels.y * MASK_SCALE), 8))

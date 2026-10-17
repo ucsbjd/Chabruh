@@ -60,9 +60,9 @@ The 1080p60 source was downloaded with the owner's OK to `storyboardimages/jbay_
 the surfer, upscales to 512, writes `SHEET_<move>.jpg`), `pose_landmarks.py` (MediaPipe pose landmarker, CPU; needs
 `pose_landmarker_heavy.task` from Google's MediaPipe model bucket, about 30 MB, in the same folder), and
 `solve_pose.py` (landmarks to the parametric poses in `poses/<move>.json`). Then
-`.	oolsoundryoundry.ps1 -Frames 8 -Name bottom_turn` renders the move, and a yaw-0 render next to the crops
+`.\tools\foundry\foundry.ps1 -Frames 8 -Name bottom_turn` renders the move, and a yaw-0 render next to the crops
 makes `COMPARE_<move>.png`. Done so far: bottom turn (0 to 1.2 s of the clip; the torso fold is floored at about 35
-degrees in the later frames because MediaPipe under-reads it there). Not yet: the other seven moves, finger curl, the pocket flap.
+degrees in the later frames because MediaPipe under-reads it there). Not yet for the sprites: the other seven moves.
 
 ## The real-time surfer (step 9)
 
@@ -73,6 +73,34 @@ the poses `trim`, `crouch` and `bottom_turn` baked as one-frame actions with IK 
 In the game `Surfer3D` (`scripts/surfer_3d.gd`) lives inside `WaveStage`'s viewport and `shaders/surfer3d.gdshader`
 colours it from the mood. Open it with `?surfer3d` or the 3 key; 1 and 2 toggle the bottom turn and the crouch, which
 ease in and out over about 0.12 s and can be reversed at any moment. Capture with `tools\capture.ps1 -Surfer3d bottom_turn`.
+
+### Step 12: the whole library, normals, the face, the details
+
+- **Poses** (board level; the game drives the arms, the legs' bend and the balance, so these give the spine, hips, head
+  and hands): `trim`, `crouch` (refined: deeper hinge, back knee in), `bottom_turn`, `top_turn`, `snap` (sitting back
+  over the tail, chest open, head turned down the face, hands open), `barrel` (compact, knees together), `floater`
+  (taller, weight centred), `air` (knees drawn up), `tumble` (curled up, hands holding the head: `hands_at="head"`) and
+  `sit` (astride the board facing the nose, hips `SIT_HIP` above the deck, feet hanging in the water, hands on the rails:
+  `sit=True`, `hands_at="board"`, foot targets `fl`/`fr` and knee poles `kl`/`kr`). Every pose curls the fingers
+  (`FINGER_CURL`, `THUMB_CURL`, scaled by the pose's `fingers`).
+- **Mute the IK before exporting.** The actions already hold the IK's result; the glTF exporter samples each action with
+  constraints live, so a live IK pulls every pose's legs and arms toward wherever the last pose left the targets (it is
+  why the old model's baked right arm pointed up). `export_glb` mutes every constraint first.
+- **Normals.** The capsule stand-in has no end caps (a cap inside an end sphere handed its axis to the skin round it),
+  the face, hands and feet keep their own normals (`own_normals`: the stand-in has no nose, fingers or toes), and
+  `keep_normals_outward` pulls any corner normal that leans into its face back out. Together they fixed the lit patches
+  on his upper back, hands and feet.
+- **Decimation that keeps the face.** The face (`face_keep`, the face bones' weights) is decimated to `FACE_RATIO` and the
+  rest to `BODY_RATIO`, each as its own edit-mode selection. Do not use the Decimate modifier's vertex group for this: it
+  makes zero-weight vertices uncollapsible and eats the rest of the mesh to reach the count (it took his legs off).
+  About 10k triangles, 1.6 MB.
+- **Details.** The palm print is a decal (`game/assets/textures/palm_print.png`, from `make_decals.py`): the green and blue
+  of each corner's vertex colour say where it falls in the print's square (`palm_decal`, `DECAL_SPAN` of the colour
+  range, the same constant in `surfer3d.gdshader`), drawn in the trim colour. The back pocket's flap (region 6) and
+  button (region 4, ink) are a small patch laid on the shorts and skinned like them (`add_pocket`, `POCKET_BOX`).
+- **After exporting**, run `godot_console --headless --path game --import` or the game keeps the old import.
+- **Looking at it:** `capture.ps1 -Events 'pose:sit@60' -Snaps 130` holds a baked pose (`Surfer3D.held_pose`) for a
+  contact sheet; `-Events 'wipeout@60'` shows the tumble and the lull's sit in context.
 
 ## Posing by hand in Blender
 
@@ -85,7 +113,7 @@ ease in and out over about 0.12 s and can be reversed at any moment. Capture wit
 3. Save the pose: Scripting tab, open `tools/foundry/save_pose.py`, set `SET` (the move, such as `bottom_turn`), `POSE_NAME`
    and `POSITION`, Run Script. It writes into `tools/foundry/poses/<SET>.json` (reusing a name replaces that frame).
    A pose saved this way carries a `raw` block and is rendered exactly as posed.
-4. Render: `.	oolsoundryoundry.ps1 -Frames <count> -Name <SET>`.
+4. Render: `.\tools\foundry\foundry.ps1 -Frames <count> -Name <SET>`.
 
 ## Frame format ("toon")
 

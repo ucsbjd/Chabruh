@@ -324,6 +324,11 @@ CORE blobs   = lerp(2, 8, s)     half-angle ×0.8, speed ×0.5, lifetime ×0.6, 
 rays         = 30 fixed directions across the arc ("spokes"), speed uniform-random per particle, droplet size ×U[0.7,1.4]
 a pool of 3 fans can overlap; back layer (fan body + core + wake) is drawn behind the surfer, front layer (edge droplets, splash) in front
 ```
+With the real-time surfer (step 12) "behind" needs a mask: the 3D stage (and him inside it) is one 2D layer below all the
+spray, so the back layer would paint over him. `WaveStage` renders him alone (render layer `SURFER_LAYER`) into a second,
+half-size transparent viewport with a copy of the stage camera (`surfer_mask()`), and the back layer's material
+(`shaders/spray_behind.gdshader`) drops its droplets where that mask is opaque. A giant fan's fine front droplets are
+cut by `GIANT_FRONT_CUT`, so in the lip hit he reads in front of the fan, as in the gold-standard clip.
 Particle motion (per droplet), with `g_s = 6 m/s²` (less than real 9.8 on purpose, to keep arcs open):
 ```
 x(t) = x0 + v0 cosα · t ;  y(t) = y0 + v0 sinα · t + ½ g_s t²      (α = ray angle on screen; screen y down)

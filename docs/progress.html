@@ -447,13 +447,15 @@ const STEPS = [
       "Lineup intro: calm water, walk or paddle out, sitting on the board in the lull with idle floating, then a set approaches (swell lines on the horizon) instead of the swell simply standing up under him.",
       "Each wave plays out a life (swell, shoulder, the reef's sections, closeout), with size and hollowness varying from set to set on top of the tide; sets every 45 to 60 s with the lulls between them.",
       "End of ride (the wave closes out or you kick out): drift back to the lineup, next set after a lull. No score, no stats. Keep the test overlay's K and Y working, and add a key for the next set.",
-      "Lulls and sets vary a little but always feel calm."
+      "Lulls and sets vary a little but always feel calm.",
+      "A lip that starts to curl over must finish: gravity takes over and it pitches, falls and breaks, never un-curling back up. Today two things make it defy gravity: the lip cycle in wave3d.gdshader (and WaveStage.lip_morph) loops LIFTED, THROWN, LANDED and back to LIFTED at the same spot, so a fallen lip rises again; and when a reef bowl moves past the peel point the reshape lowers the hollowness, so a thrown curl straightens back out. Make the break one-way: once a stretch of crest has thrown, its lip follows a ballistic fall (the jet keeps its forward speed while gravity pulls it down, WaveModel.lip_landing_point) into the trough, the barrel behind it collapses into whitewater, and only the next stretch of wall down the line pitches. A bowl passing should leave its barrel to collapse behind the break, not uncurl it. Keep the mesh unrebuilt per frame (CLAUDE.md), keep the carve trail, spit (WaveSpray) and Rider in step with what the shader draws, and use the step 11 capture tools (capture.ps1 -Events 'bowl@0', G for a barrel) to show the sequence."
     ],
     notNow: ["Music, polish."],
     verify: [
       "I can loop lineup, ride, tube, kick out, lineup several times without anything breaking.",
       "The tube looks like licensed-image.jpg (glow through the lip) and feels like a reward.",
-      "Lulls feel relaxed rather than empty, and nothing nags me."
+      "Lulls feel relaxed rather than empty, and nothing nags me.",
+      "Watching a barrel (G, or a reef bowl with 7), the lip pitches, falls and crashes into whitewater; nowhere along the wave does a curl lift back up or un-curl against gravity (Claude shows a contact sheet of the sequence)."
     ]
   },
   {
